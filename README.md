@@ -50,11 +50,13 @@ npm run test:local
 
 ### 一次性配置
 
-1. **密钥**：把运行时控制面 key 写进项目根目录的 `.env`（已在 `.gitignore`，不会被提交）：
+1. **密钥与隧道 ID**：写进项目根目录的 `.env`（已在 `.gitignore`，不会被提交；可参考 `.env.example`）：
    ```
    CONTROL_PLANE_API_KEY=sk-...
+   CONTROL_PLANE_TUNNEL_ID=tunnel_xxx   # ChatGPT 连接器绑定的那条隧道
    ```
-2. **隧道 profile**：`~/.config/tunnel-client/chatgpt-agent-bridge.yaml` 里的 `tunnel_id`
+   `CONTROL_PLANE_TUNNEL_ID` 是 tunnel-client 的官方环境变量，**优先级高于 profile YAML**——改 `.env` 即生效，无需改 profile。
+2. **隧道一致性**：`.env` 的 `CONTROL_PLANE_TUNNEL_ID`（优先）或 profile YAML 的 `tunnel_id`，
    **必须与 ChatGPT 连接器绑定的隧道一致**（不一致会报 "Tunnel-client has not been seen for 300 seconds"）。
    核对方式（用 `.env` 里的运行时 key 即可只读查询，看 `name` 字段）：
    ```bash
@@ -73,12 +75,13 @@ npm run test:local
 
 ### 日常使用
 
-启动隧道（保持运行；改过 `src/` 代码先 `npm run build`）：
+启动隧道（一键脚本：自动读取 `.env` 并启动，前台运行，Ctrl+C 停止）：
 ```bash
 cd ~/ai_dev/chatgpt-agent-bridge
-set -a && source .env && set +a
-tunnel-client run --profile chatgpt-agent-bridge
+./scripts/start-tunnel.sh            # 已在运行时仅提示（不打扰进行中的任务）
+./scripts/start-tunnel.sh --restart  # 需要重启时（注意：会中断进行中的任务）
 ```
+（等价手动命令：`set -a && source .env && set +a && tunnel-client run --profile chatgpt-agent-bridge`；改过 `src/` 代码先 `npm run build`）
 
 在 ChatGPT 对话中驱动 Codex（零额度），把下面这段作为驱动提示词发给对话：
 ```
