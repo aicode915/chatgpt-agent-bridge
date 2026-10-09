@@ -65,13 +65,13 @@ const b = await runScenario(
           type: "exec",
           input:
             'const r = await tools.exec_command({ cmd: "echo hello-from-exec" });\n' +
-            'text(JSON.stringify(r).slice(0, 2000));\n' +
-            'return "exec done";',
+            'text(JSON.stringify(r).slice(0, 2000));',
         }],
       });
     }
-    const hasToolOutput = text.includes("hello-from-exec");
-    console.log(`[B] turn #${turnNo}: tool output present in transcript: ${hasToolOutput}`);
+    const hasExecResult = /Wall time/.test(text);
+    const hasEchoOutput = text.includes("hello-from-exec");
+    console.log(`[B] turn #${turnNo}: exec 已执行=${hasExecResult}, 输出含 hello-from-exec=${hasEchoOutput}`);
     return JSON.stringify({ items: [{ type: "message", text: "DONE hello-from-exec" }] });
   },
 );

@@ -114,6 +114,9 @@ tunnel-client run --profile chatgpt-agent-bridge
 服务日志关键点：`[bridge] task ... spawned codex`（任务启动）→ `model request #N received`（codex 请求模型）
 → `turn ... answered -> message(...)`（ChatGPT 作答已回填）→ `codex closed (code=0) -> finished`（任务完成）。
 
+**实时观察**：在 VS Code 的 `tunnel-client` 终端里可以实时看到每一步日志；插件会把 codex 的输出流
+（`codex stdout/stderr:` 行）和每次工具执行的输出（`tool output N (...)`）实时打到该终端（均做了截断）。
+
 ## Health check
 
 The MCP server itself uses stdio. The embedded model bridge (quota-free codex flow) exposes a local-only debug endpoint at `http://127.0.0.1:<BRIDGE_PORT>/healthz`; the tunnel-client admin surface is at `http://127.0.0.1:8080` (`tunnel-client health --url http://127.0.0.1:8080`). Validate the MCP side through the Secure MCP Tunnel and an actual MCP tool call.
