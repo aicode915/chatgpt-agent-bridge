@@ -2,20 +2,18 @@
 
 A minimal local MCP server for **ChatGPT → Secure MCP Tunnel → local machine**.
 
-Two ways to use the locally installed Codex CLI:
+The bridge performs **no file/command execution of its own** — every action is executed by the locally installed **Codex CLI**, driven as a quota-free virtual model by the ChatGPT conversation:
 
-1. **Quota-free virtual model (recommended):** `codex_start` spawns `codex exec` with a per-process model-provider override so codex's model requests go to a local endpoint inside this plugin. Each request is handed to the ChatGPT conversation itself (`codex_poll`), which answers as the model (`codex_reply`). Codex never calls OpenAI's model API for these runs; the ChatGPT subscription powers it.
-2. **Plain delegation:** `run_agent` runs Codex/Claude with their own configured accounts and quotas.
-
-Direct filesystem/command tools (`list_dir`, `read_file`, `write_file`, `run_command`, `git_status`) remain available too.
+- `codex_start` spawns `codex exec` with a per-process model-provider override so codex's model requests go to a local endpoint inside this plugin.
+- Each request is handed to the ChatGPT conversation itself (`codex_poll`), which answers as the model (`codex_reply`).
+- Codex never calls OpenAI's model API for these runs; the ChatGPT subscription powers it.
 
 ## Architecture
 
 ```
 ChatGPT conversation
 → OpenAI Secure MCP Tunnel
-→ this MCP server (stdio)
-   ├─ direct tools: list_dir / read_file / write_file / run_command / git_status / run_agent
+→ this MCP server (stdio; NO direct file/command tools — all execution happens inside codex)
    └─ quota-free Codex flow:
         codex_start → local `codex exec` (per-process `-c model_provider=bridge`; global ~/.codex/config.toml untouched)
         codex model request → http://127.0.0.1:<BRIDGE_PORT>/t/<task_id>/v1/responses (Responses API SSE)
@@ -24,19 +22,13 @@ ChatGPT conversation
         … loop until codex exits; then codex_poll returns the final result
 ```
 
-Wire-protocol notes: codex ≥ 0.161 requires the **Responses API** wire format (`wire_api = "chat"` was removed upstream — see openai/codex discussion #7782). The bridge implements the minimal SSE contract codex needs (`response.created` → `response.output_item.done` → `response.completed`). No ACP; `run_command` uses literal argv and does not invoke a shell.
+Wire-protocol notes: codex ≥ 0.161 requires the **Responses API** wire format (`wire_api = "chat"` was removed upstream — see openai/codex discussion #7782). The bridge implements the minimal SSE contract codex needs (`response.created` → `response.output_item.done` → `response.completed`). No ACP; the bridge itself never runs shell commands.
 
 ## Tools
 
-- `list_dir`
-- `read_file`
-- `write_file`
-- `run_command`
-- `git_status`
-- `run_agent` (Codex or Claude Code; uses their own account/quota; read-only by default)
-- `codex_start` / `codex_poll` / `codex_reply` / `codex_cancel` / `codex_list` (quota-free Codex flow driven by the ChatGPT conversation)
+- `codex_start` / `codex_poll` / `codex_reply` / `codex_cancel` / `codex_list` — the only tools exposed; the quota-free Codex flow driven by the ChatGPT conversation.
 
-All requested working directories are confined to `WORKSPACE_ROOT`. `run_command` uses literal argv and does not invoke a shell. `run_agent` accepts `agent` (`codex` or `claude`), `prompt`, optional project-relative `cwd`, `mode` (`read-only` by default or `workspace-write`), and `timeout_secs` (10–900 seconds). Codex uses its read-only/workspace-write sandbox; Claude uses plan/acceptEdits permission mode. Write mode can change project files, so use read-only for diagnostics.
+The bridge exposes no direct file/command tools: every operation happens inside the codex subprocess (`codex_start`), confined to the requested project-relative `cwd` (checked against `WORKSPACE_ROOT`) and executed in codex's own sandbox (`read-only` by default, or `workspace-write` to allow edits).
 
 ## Run locally
 

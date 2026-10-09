@@ -84,6 +84,7 @@ interface BridgeTask {
   killReason?: "user" | "timeout" | "stop";
   pending?: PendingTurn;
   turns: number;
+  loggedOutputs: number;
   timeoutTimer: NodeJS.Timeout;
 }
 
@@ -152,6 +153,39 @@ function chunkText(text: string, size: number): string[] {
 
 function tail(text: string, cap: number): string {
   return text.length > cap ? text.slice(text.length - cap) : text;
+}
+
+/** 把 codex 的输出块实时打到 stderr（tunnel 终端可见）。 */
+function teeCodexChunk(task: BridgeTask, stream: "stdout" | "stderr", chunk: string): void {
+  const lines = chunk
+    .split(/\r?\n/)
+    .map((line) => line.trimEnd())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) return;
+  for (const line of lines.slice(0, 12)) {
+    log(`task ${task.id}: codex ${stream}: ${truncate(line, 400)}`);
+  }
+  if (lines.length > 12) log(`task ${task.id}: codex ${stream}: …（还有 ${lines.length - 12} 行）`);
+}
+
+/** 新模型请求到达时，把本次新增的工具执行输出打印出来（实时可见）。 */
+function logNewToolOutputs(task: BridgeTask, body: Record<string, any>): void {
+  const input = Array.isArray(body.input) ? body.input : [];
+  const outputs = input.filter(
+    (item: any) => item?.type === "function_call_output" || item?.type === "custom_tool_call_output",
+  );
+  for (let i = task.loggedOutputs; i < outputs.length; i += 1) {
+    const item = outputs[i] as Record<string, any>;
+    const text = itemText(item.output).trim();
+    if (!text) continue;
+    const preview = text
+      .split(/\r?\n/)
+      .slice(0, 6)
+      .map((line) => line.trimEnd())
+      .join("\n    ");
+    log(`task ${task.id}: tool output ${i + 1} (${item.type}, ${text.length} chars):\n    ${truncate(preview, 800)}`);
+  }
+  task.loggedOutputs = outputs.length;
 }
 
 /* ------------------------------------------------------------------ */
@@ -543,6 +577,7 @@ export class ModelBridge {
       exitCode: null,
       signal: null,
       turns: 0,
+      loggedOutputs: 0,
       timeoutTimer: setTimeout(() => this.killTask(task, "timeout"), options.timeoutSecs * 1000),
     };
     this.tasks.set(id, task);
@@ -551,9 +586,11 @@ export class ModelBridge {
     child.stderr?.setEncoding("utf8");
     child.stdout?.on("data", (chunk: string) => {
       task.stdout = appendCapped(task.stdout, chunk);
+      teeCodexChunk(task, "stdout", chunk);
     });
     child.stderr?.on("data", (chunk: string) => {
       task.stderr = appendCapped(task.stderr, chunk);
+      teeCodexChunk(task, "stderr", chunk);
     });
     child.on("error", (error) => {
       task.error = `spawn failed: ${error.message}`;
@@ -710,6 +747,7 @@ export class ModelBridge {
       task.turns = turn.seq;
       task.pending = turn;
       log(`task ${taskId}: model request #${turn.seq} received (${turn.stream ? "stream" : "json"}, ${raw.length} bytes)`);
+      logNewToolOutputs(task, body);
 
       if (turn.stream) {
         res.writeHead(200, {
