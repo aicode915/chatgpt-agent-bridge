@@ -20,94 +20,53 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import http from "node:http";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn } from "node:child_process";
 import { ConfigManager } from "./config.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import { pickDirectoryDialog } from "./system.js";
+import {
+  type TaskMode,
+  type TaskStatus,
+  type TurnHistoryItem,
+  type StartTaskOptions,
+  type StartTaskInfo,
+  type ReplyAck,
+  type PollResult,
+  type WireItem,
+  type PendingTurn,
+  type BridgeTask,
+  type ModelBridgeOptions,
+} from "./types.js";
+import {
+  newId,
+  zeroUsage,
+  chunkText,
+  itemText,
+  messageItem,
+  convertItem,
+  parseReply,
+} from "./protocol.js";
+import {
+  appendCapped,
+  truncate,
+  tail,
+  renderTurn,
+  summarizeEnd,
+} from "./prompt.js";
 
-export type TaskMode = "read-only" | "workspace-write" | "danger-full-access";
-export type TaskStatus = "running" | "finished" | "failed" | "cancelled" | "abandoned";
+// Re-export public types and protocol functions for backward compatibility
+export type {
+  TaskMode,
+  TaskStatus,
+  TurnHistoryItem,
+  StartTaskOptions,
+  StartTaskInfo,
+  ReplyAck,
+  PollResult,
+  ModelBridgeOptions,
+};
+export { parseReply };
 
-export interface TurnHistoryItem {
-  seq: number;
-  id: string;
-  createdAt: number;
-  answeredAt?: number;
-  replyLabels?: string[];
-}
-
-export interface StartTaskOptions {
-  prompt: string;
-  cwd: string;
-  mode: TaskMode;
-  timeoutSecs: number;
-}
-
-export interface StartTaskInfo {
-  taskId: string;
-  port: number;
-  baseUrl: string;
-}
-
-export interface ReplyAck {
-  turnId: string;
-  emitted: string[];
-}
-
-export interface PollResult {
-  kind: "model_request" | "waiting" | TaskStatus;
-  turnId?: string;
-  turnNumber?: number;
-  exitCode?: number | null;
-  text: string;
-}
-
-interface WireItem {
-  kind: string;
-  label: string;
-  item: Record<string, unknown>;
-}
-
-interface PendingTurn {
-  id: string;
-  seq: number;
-  createdAt: number;
-  body: Record<string, any>;
-  stream: boolean;
-  res: http.ServerResponse;
-  answered: boolean;
-  keepalive: NodeJS.Timeout | null;
-}
-
-interface BridgeTask {
-  id: string;
-  mode: TaskMode;
-  cwd: string;
-  prompt: string;
-  timeoutSecs: number;
-  status: TaskStatus;
-  createdAt: number;
-  finishedAt?: number;
-  child: ChildProcess;
-  stdout: string;
-  stderr: string;
-  exitCode: number | null;
-  signal: NodeJS.Signals | null;
-  error?: string;
-  killReason?: "user" | "timeout" | "stop" | "abandoned";
-  pending?: PendingTurn;
-  turns: number;
-  turnHistory: TurnHistoryItem[];
-  loggedOutputs: number;
-  timeoutTimer: NodeJS.Timeout;
-  lastActivityAt: number;
-  idleTimer: NodeJS.Timeout | null;
-  logListeners: Set<(event: string, data: any) => void>;
-}
-
-const OUTPUT_TAIL = 200_000; // 每个流保留最后 200KB
-const TEXT_CAP_PER_ITEM = 16_000;
-const RENDER_CAP_TOTAL = 220_000;
 const DEFAULT_PORT = 8791;
 const DEFAULT_IDLE_TURN_TIMEOUT_SECS = 60;
 const IDLE_TURN_TIMEOUT_MS = Number(process.env.TURN_IDLE_TIMEOUT_SECS ?? DEFAULT_IDLE_TURN_TIMEOUT_SECS) * 1000;
@@ -123,65 +82,6 @@ function broadcastTaskEvent(task: BridgeTask, event: string, data: any): void {
       /* ignore broken subscriber */
     }
   }
-}
-
-let idCounter = 0;
-function newId(prefix: string): string {
-  idCounter += 1;
-  return `${prefix}_${crypto.randomBytes(8).toString("hex")}${idCounter.toString(36)}`;
-}
-
-function appendCapped(prev: string, chunk: string): string {
-  const next = prev + chunk;
-  return next.length > OUTPUT_TAIL ? next.slice(next.length - OUTPUT_TAIL) : next;
-}
-
-function truncate(text: string, cap: number): string {
-  if (text.length <= cap) return text;
-  return `${text.slice(0, cap)}\n…[truncated ${text.length - cap} chars]`;
-}
-
-function itemText(content: unknown): string {
-  if (content == null) return "";
-  if (typeof content === "string") return content;
-  if (Array.isArray(content)) {
-    return content
-      .map((part) => {
-        if (typeof part === "string") return part;
-        if (part && typeof part === "object") {
-          const obj = part as Record<string, unknown>;
-          if (typeof obj.text === "string") return obj.text;
-          return JSON.stringify(obj);
-        }
-        return "";
-      })
-      .join("\n");
-  }
-  try {
-    return JSON.stringify(content);
-  } catch {
-    return String(content);
-  }
-}
-
-function zeroUsage(): Record<string, unknown> {
-  return {
-    input_tokens: 0,
-    input_tokens_details: null,
-    output_tokens: 0,
-    output_tokens_details: null,
-    total_tokens: 0,
-  };
-}
-
-function chunkText(text: string, size: number): string[] {
-  const out: string[] = [];
-  for (let i = 0; i < text.length; i += size) out.push(text.slice(i, i + size));
-  return out;
-}
-
-function tail(text: string, cap: number): string {
-  return text.length > cap ? text.slice(text.length - cap) : text;
 }
 
 /** 把 codex 的输出块实时打到 stderr（tunnel 终端可见）。 */
@@ -218,308 +118,8 @@ function logNewToolOutputs(task: BridgeTask, body: Record<string, any>): void {
 }
 
 /* ------------------------------------------------------------------ */
-/* ChatGPT 答复 → Responses 输出 items 的解析与转换                      */
-/* ------------------------------------------------------------------ */
-
-function messageItem(text: string): WireItem {
-  const value = text.trim();
-  if (!value) throw new Error("message item text is empty");
-  return {
-    kind: "message",
-    label: `message(${value.length} chars)`,
-    item: {
-      type: "message",
-      id: newId("msg"),
-      role: "assistant",
-      content: [{ type: "output_text", text: value }],
-    },
-  };
-}
-
-function convertItem(raw: unknown): WireItem {
-  if (typeof raw === "string") return messageItem(raw);
-  if (!raw || typeof raw !== "object") throw new Error("reply item must be a JSON object or string");
-  const obj = raw as Record<string, any>;
-  const type = String(obj.type ?? "message").toLowerCase();
-
-  if (type === "message" || type === "text") {
-    return messageItem(itemText(obj.text ?? obj.content));
-  }
-  if (type === "exec" || type === "custom_tool_call" || type === "custom") {
-    const name = String(obj.name ?? "exec");
-    const input =
-      typeof obj.input === "string"
-        ? obj.input
-        : typeof obj.code === "string"
-          ? obj.code
-          : typeof obj.text === "string"
-            ? obj.text
-            : "";
-    if (!input.trim()) {
-      throw new Error(`custom_tool_call item needs a non-empty "input" (raw JS source for exec)`);
-    }
-    return {
-      kind: "custom_tool_call",
-      label: `custom_tool_call:${name}(${input.length} chars)`,
-      item: {
-        type: "custom_tool_call",
-        id: newId("ctc"),
-        call_id: newId("call"),
-        name,
-        input,
-        ...(obj.namespace ? { namespace: String(obj.namespace) } : {}),
-      },
-    };
-  }
-  if (type === "function_call" || type === "function") {
-    const name = obj.name;
-    if (typeof name !== "string" || !name) throw new Error("function_call item needs a string 'name'");
-    const argsRaw = obj.arguments;
-    const args = typeof argsRaw === "string" ? argsRaw : JSON.stringify(argsRaw ?? {});
-    return {
-      kind: "function_call",
-      label: `function_call:${obj.namespace ? `${obj.namespace}.` : ""}${name}`,
-      item: {
-        type: "function_call",
-        id: newId("fc"),
-        call_id: newId("call"),
-        name,
-        arguments: args,
-        ...(obj.namespace ? { namespace: String(obj.namespace) } : {}),
-      },
-    };
-  }
-  if (type === "reasoning") {
-    const list = Array.isArray(obj.summary) ? obj.summary : [];
-    const summary = list
-      .map((entry: unknown) => {
-        if (typeof entry === "string") return { type: "summary_text", text: entry };
-        if (entry && typeof entry === "object") {
-          const text = itemText((entry as Record<string, any>).text);
-          return { type: "summary_text", text };
-        }
-        return { type: "summary_text", text: "" };
-      })
-      .filter((entry: { text: string }) => entry.text.trim().length > 0);
-    if (summary.length === 0) throw new Error("reasoning item needs a non-empty 'summary' array of strings");
-    return {
-      kind: "reasoning",
-      label: `reasoning(${summary.length})`,
-      item: { type: "reasoning", id: newId("rs"), summary, encrypted_content: null },
-    };
-  }
-  throw new Error(
-    `unsupported reply item type "${type}" — allowed: message, exec (custom_tool_call), function_call, reasoning`,
-  );
-}
-
-export function parseReply(replyText: string): WireItem[] {
-  const trimmed = replyText.trim();
-  if (!trimmed) throw new Error("reply is empty");
-
-  let list: unknown[];
-  const first = trimmed[0];
-  if (first !== "{" && first !== "[") {
-    list = [trimmed]; // 纯文本 → 单条 message
-  } else {
-    let t = trimmed;
-    const fence = t.match(/^```[a-zA-Z]*\s*\n([\s\S]*?)\n```\s*$/);
-    if (fence) t = fence[1].trim();
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(t);
-    } catch (err) {
-      throw new Error(
-        `reply looks like JSON but failed to parse (${(err as Error).message}). Send valid JSON or plain text.`,
-      );
-    }
-    if (Array.isArray(parsed)) {
-      list = parsed;
-    } else if (parsed && typeof parsed === "object") {
-      const obj = parsed as Record<string, unknown>;
-      if (Array.isArray(obj.items)) list = obj.items;
-      else if (typeof obj.type === "string" || typeof obj.text === "string") list = [obj];
-      else throw new Error('reply JSON must be {"items":[...]} or a single item object');
-    } else {
-      throw new Error("reply JSON must be an object or array");
-    }
-  }
-
-  const items = list.map(convertItem);
-  if (items.length === 0) throw new Error("reply must contain at least one item");
-  return items;
-}
-
-
-/* ------------------------------------------------------------------ */
-/* 模型请求 → 给 ChatGPT 阅读的文本渲染                                  */
-/* ------------------------------------------------------------------ */
-
-function renderInputItem(idx: number, item: any): string {
-  const type = item?.type ?? "unknown";
-  if (type === "additional_tools") {
-    const namespaces = Array.isArray(item.tools) ? item.tools : [];
-    return `[${idx}] additional_tools (developer): ${namespaces.length} namespace(s) — see TOOLS section`;
-  }
-  if (type === "message") {
-    const text = itemText(item.content).trim();
-    return `[${idx}] message (${item.role ?? "?"}) [${text.length} chars]:\n${truncate(text, TEXT_CAP_PER_ITEM)}`;
-  }
-  if (type === "function_call") {
-    return `[${idx}] function_call -> ${item.namespace ? `${item.namespace}.` : ""}${item.name} args=${truncate(String(item.arguments ?? ""), 2000)}`;
-  }
-  if (type === "custom_tool_call") {
-    const input = String(item.input ?? "");
-    return `[${idx}] custom_tool_call -> ${item.name} [input ${input.length} chars]:\n${truncate(input, 8000)}`;
-  }
-  if (type === "function_call_output" || type === "custom_tool_call_output") {
-    const output = itemText(item.output).trim();
-    return `[${idx}] tool_output (${type}, call_id=${item.call_id ?? "?"}) [${output.length} chars]:\n${truncate(output, TEXT_CAP_PER_ITEM)}`;
-  }
-  if (type === "reasoning") {
-    const summary = Array.isArray(item.summary)
-      ? item.summary.map((entry: any) => (typeof entry === "string" ? entry : entry?.text)).filter(Boolean).join("\n")
-      : "";
-    return `[${idx}] reasoning:\n${truncate(String(summary), 4000)}`;
-  }
-  return `[${idx}] ${type}: ${truncate(JSON.stringify(item), 2000)}`;
-}
-
-interface ToolSummary {
-  summary: string;
-  appendix: string;
-}
-
-function renderTools(body: any, input: any[]): ToolSummary {
-  const lines: string[] = [];
-  const appendix: string[] = [];
-  let execDescription = "";
-  const otherDescriptions: string[] = [];
-
-  const namespaces = Array.isArray(input?.[0]?.tools) ? input[0].tools : [];
-  if (namespaces.length > 0) {
-    lines.push("Namespaces (responses-lite). Call a function tool via a function_call item with its namespace; inside exec JS call it as tools.<name>(...):");
-    for (const ns of namespaces) {
-      const tools = Array.isArray(ns?.tools) ? ns.tools : [];
-      const names = tools.map((t: any) => `${t?.name}${t?.type === "custom" ? " [custom/JS]" : ""}`).join(", ");
-      lines.push(`  - ${ns?.name}: ${names}`);
-      for (const t of tools) {
-        const description = String(t?.description ?? "");
-        if (t?.type === "custom" && t?.name === "exec") execDescription = description;
-        else if (description) otherDescriptions.push(`- ${ns?.name}.${t?.name} [${t?.type}]: ${truncate(description.replace(/\n/g, " "), 700)}`);
-      }
-    }
-  }
-
-  const topTools = Array.isArray(body?.tools) ? body.tools : [];
-  if (topTools.length > 0) {
-    lines.push("Top-level tools:");
-    for (const t of topTools) {
-      const description = String(t?.description ?? "");
-      const params = t?.parameters ? ` params=${JSON.stringify(t.parameters).slice(0, 300)}` : "";
-      lines.push(`  - ${t?.name} [${t?.type}]${params}`);
-      if (t?.type === "custom" && t?.name === "exec") execDescription = description;
-      else if (description) otherDescriptions.push(`- ${t?.name} [${t?.type}]: ${truncate(description.replace(/\n/g, " "), 700)}`);
-    }
-  }
-
-  if (lines.length === 0) lines.push("(no tools declared in this request)");
-
-  if (execDescription) {
-    appendix.push("--- APPENDIX: full description of the `exec` tool (how to write JS, nested tool declarations) ---");
-    appendix.push(truncate(execDescription, 18_000));
-  }
-  if (otherDescriptions.length > 0) {
-    appendix.push("");
-    appendix.push("--- APPENDIX: other tool descriptions ---");
-    appendix.push(truncate(otherDescriptions.join("\n"), 20_000));
-  }
-
-  return { summary: lines.join("\n"), appendix: appendix.join("\n") };
-}
-
-function renderTurn(task: BridgeTask, turn: PendingTurn): string {
-  const body = turn.body ?? {};
-  const input: any[] = Array.isArray(body.input) ? body.input : [];
-  const lines: string[] = [];
-
-  lines.push("=== CODEX MODEL REQUEST (you are the model; reply via codex_reply) ===");
-  lines.push(`task_id: ${task.id}`);
-  lines.push(`turn_id: ${turn.id}   (turn #${turn.seq})`);
-  lines.push(`mode: ${task.mode} | cwd: ${task.cwd} | timeout: ${task.timeoutSecs}s`);
-  lines.push(`model: ${body.model ?? "(none)"} | stream: ${body.stream === true} | reasoning: ${JSON.stringify(body.reasoning ?? null)}`);
-
-  const tools = renderTools(body, input);
-  lines.push("");
-  lines.push("--- TOOLS ---");
-  lines.push(tools.summary);
-
-  lines.push("");
-  lines.push("--- INPUT ITEMS (chronological; codex's full context for this turn) ---");
-  let total = 0;
-  let truncated = false;
-  for (let i = 0; i < input.length; i += 1) {
-    const rendered = renderInputItem(i, input[i]);
-    total += rendered.length;
-    if (total > RENDER_CAP_TOTAL) {
-      truncated = true;
-      break;
-    }
-    lines.push(rendered);
-  }
-  lines.push(truncated ? "…[remaining input items omitted for length]" : "(end of input items)");
-
-  if (tools.appendix) {
-    lines.push("");
-    lines.push(tools.appendix);
-  }
-
-  lines.push("");
-  lines.push("--- REPLY PROTOCOL ---");
-  lines.push(`Call: codex_reply(task_id="${task.id}", turn_id="${turn.id}", reply="<reply>")`);
-  lines.push("<reply> must be ONE JSON object:");
-  lines.push('  { "items": [ ...one or more items... ] }');
-  lines.push("Item forms:");
-  lines.push('  1) {"type":"message","text":"<what you say to the user>"}                          — commentary or final answer');
-  lines.push('  2) {"type":"exec","input":"<raw JavaScript source>"}                               — run JS that orchestrates tools (the main tool)');
-  lines.push('  3) {"type":"function_call","name":"<tool>","namespace":"<ns>","arguments":{...}}    — call a listed function tool directly (namespace optional if top-level)');
-  lines.push('  4) {"type":"reasoning","summary":["<short thinking summary>"]}                     — optional');
-  lines.push("Rules:");
-  lines.push('- To actually do things (run commands, edit files), emit an "exec" item whose JS awaits nested tools, e.g.:');
-  lines.push('    const r = await tools.exec_command({ cmd: "ls" }); text(JSON.stringify(r, null, 2).slice(0, 4000));');
-  lines.push('- Raw JS only (no markdown fences, no JSON wrapper) inside "input". See the exec description appendix for the full nested-tool list.');
-  lines.push('- When the user-visible goal is complete, emit a "message" item (final answer) and NO tool calls, so codex finishes.');
-  lines.push('- Keep tool usage minimal and purposeful. Plain text replies are accepted and treated as one "message" item.');
-
-  return lines.join("\n");
-}
-
-function summarizeEnd(task: BridgeTask): PollResult {
-  const header =
-    task.status === "finished"
-      ? `=== CODEX FINISHED (exit ${task.exitCode}) ===`
-      : `=== CODEX ${task.status.toUpperCase()}${task.error ? ` — ${task.error}` : ""} ===`;
-  const parts = [
-    header,
-    `task_id: ${task.id}`,
-    `turns: ${task.turns}`,
-    "",
-    "--- stdout (tail) ---",
-    tail(task.stdout.trim(), 20_000) || "(empty)",
-    task.stderr.trim() ? `--- stderr (tail) ---\n${tail(task.stderr.trim(), 4000)}` : "",
-  ];
-  return { kind: task.status, text: parts.filter(Boolean).join("\n"), exitCode: task.exitCode };
-}
-
-/* ------------------------------------------------------------------ */
 /* 主体：HTTP 虚拟端点 + 任务管理                                        */
 /* ------------------------------------------------------------------ */
-
-export interface ModelBridgeOptions {
-  port?: number;
-  turnIdleTimeoutSecs?: number;
-  configManager?: ConfigManager;
-}
 
 export class ModelBridge {
   readonly apiKey = crypto.randomBytes(24).toString("hex");
