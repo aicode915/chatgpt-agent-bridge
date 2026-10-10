@@ -85,50 +85,69 @@ In conversational AI workflows, ChatGPT may finish answering the user's objectiv
 
 ---
 
-## Getting Started
+## Quickstart Guide
 
-### 1. One-time Setup
-
-1. **Credentials & Tunnel ID**: Save to `.env` in the project root (already ignored by `.gitignore`; see `.env.example`):
-   ```bash
-   CONTROL_PLANE_API_KEY=sk-...
-   CONTROL_PLANE_TUNNEL_ID=tunnel_xxx   # The tunnel ID bound to your ChatGPT Connector
-   ```
-   `CONTROL_PLANE_TUNNEL_ID` is the official environment variable for `tunnel-client` and **takes precedence over the profile YAML** — updating `.env` takes effect immediately without modifying profiles.
-2. **Tunnel Verification**:
-   Verify the tunnel ID using your runtime key:
-   ```bash
-   set -a && source .env && set +a
-   tunnel-client admin tunnels get <tunnel_id> --json
-   ```
-   To regenerate the profile if needed:
-   ```bash
-   tunnel-client init \
-     --sample sample_mcp_stdio_local \
-     --profile chatgpt-agent-bridge \
-     --tunnel-id tunnel_YOUR_ID \
-     --mcp-command "env WORKSPACE_ROOT=/path/to/your/project node /path/to/chatgpt-agent-bridge/dist/server.js"
-   ```
-3. **ChatGPT Connector**: In ChatGPT: Settings → Connectors → New Custom Connector → Connection Method: **Tunnel** → Select your tunnel.
-
-### 2. Daily Usage & Running
-
-Start the tunnel (one-click script automatically reading `.env`, runs in foreground, Ctrl+C to stop):
+### Step 1: Install Prerequisites
+Ensure Node.js (>= 18) and official CLI tools are installed:
 ```bash
-cd /path/to/chatgpt-agent-bridge
-./scripts/start-tunnel.sh            # Start; prompts if already running
-./scripts/start-tunnel.sh --restart  # Restart tunnel (interrupts ongoing tasks)
-```
-*(Note: after modifying anything in `src/`, run `npm run build` before restarting the tunnel)*
-
-Local closed-loop test (runs real Codex CLI with a test script playing ChatGPT's role — zero quota):
-```bash
-npm run test:local
+brew install codex tunnel-client
 ```
 
-### 3. ChatGPT Driver Prompt
+### Step 2: Obtain OpenAI Platform Credentials & Connector Setup
+1. **Create Tunnel**: Navigate to [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels), create a new tunnel, and copy your Tunnel ID (e.g., `tunnel_xxxx`).
+2. **Generate Runtime API Key**: Navigate to [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys), create or copy a runtime API key (e.g., `sk-...`).
+3. **Bind ChatGPT Connector**: Open [ChatGPT Connector Settings](https://chatgpt.com/#settings/Connectors), click "Create Custom Connector" → choose **Tunnel** connection method → select the tunnel you just created.
 
-Paste this prompt into your ChatGPT conversation (or copy it from the Web Dashboard's "⚡ Prompt Assistant" tab):
+### Step 3: Clone Repository & Configure Environment
+```bash
+git clone https://github.com/aicode915/chatgpt-agent-bridge.git
+cd chatgpt-agent-bridge
+
+# Create .env from template (git-ignored, never committed)
+cp .env.example .env
+```
+Open `.env` in an editor and fill in the credentials obtained in Step 2:
+```bash
+CONTROL_PLANE_TUNNEL_ID=tunnel_xxxx
+CONTROL_PLANE_API_KEY=sk-...
+```
+
+### Step 4: One-Click Service Launch
+Run the smart launcher in the project root:
+```bash
+./scripts/start-tunnel.sh
+```
+> **✨ Zero-Config Automation**: On first run, the script automatically executes `npm install`, `npm run build`, and initializes the `tunnel-client` Profile for your current workspace directory, removing any manual profile setup.
+> - Smooth restart if already running: `./scripts/start-tunnel.sh --restart`
+> - Local closed-loop test without ChatGPT: `npm run test:local`
+
+### Step 5: Drive Codex from ChatGPT
+1. Open the built-in Web Dashboard in your browser: 👉 **http://127.0.0.1:8791**
+2. Click **"Copy Driver Prompt"** (or switch to the "⚡ Prompt Assistant" tab).
+3. Paste the prompt into a ChatGPT conversation along with your coding task (e.g., *"Please review the repository structure and run tests"*).
+4. ChatGPT will invoke MCP tools through the secure tunnel, driving local Codex with zero API quota consumption!
+
+---
+
+### Environment Variables Reference
+
+All settings can be declared in `.env`:
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `CONTROL_PLANE_TUNNEL_ID` | **Yes** | - | OpenAI Platform Tunnel ID bound to your ChatGPT Connector |
+| `CONTROL_PLANE_API_KEY` | **Yes** | - | OpenAI Platform Runtime API Key |
+| `BRIDGE_PORT` | No | `8791` | Local virtual model bridge & Web Dashboard port |
+| `WORKSPACE_ROOT` | No | Current repo directory | Default allowed workspace root for Codex (manageable via Web Dashboard) |
+| `TURN_IDLE_TIMEOUT_SECS` | No | `60` | Per-turn idle timeout in seconds. Automatically triggers graceful auto-finalization to `finished` |
+| `CODEX_BIN` | No | `codex` | Codex CLI executable path |
+| `NO_PROXY` | No | `127.0.0.1,localhost` | Proxy bypass list |
+
+---
+
+### ChatGPT Driver Prompt Template
+
+Send this prompt to your ChatGPT conversation (or copy it directly from the Web Dashboard's "⚡ Prompt Assistant"):
 ```text
 You are the virtual "model" driving the local Codex CLI. Workflow:
 1) When a local coding task is requested, invoke codex_start(prompt, cwd, mode):

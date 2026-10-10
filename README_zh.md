@@ -85,51 +85,69 @@ ChatGPT 对话
 
 ---
 
-## 使用指南
+## 快速上手与使用指南 (Quickstart Guide)
 
-### 1. 一次性配置
-
-1. **密钥与隧道 ID**：写进项目根目录的 `.env`（已在 `.gitignore`，不会被提交；可参考 `.env.example`）：
-   ```bash
-   CONTROL_PLANE_API_KEY=sk-...
-   CONTROL_PLANE_TUNNEL_ID=tunnel_xxx   # ChatGPT 连接器绑定的那条隧道 ID
-   ```
-   `CONTROL_PLANE_TUNNEL_ID` 是 tunnel-client 的官方环境变量，**优先级高于 profile YAML**——改 `.env` 即生效，无需修改 profile 配置文件。
-2. **隧道一致性核对**：
-   `.env` 的 `CONTROL_PLANE_TUNNEL_ID` 必须与 ChatGPT 连接器绑定的隧道一致（不一致会报 *"Tunnel-client has not been seen for 300 seconds"*）。
-   核对方式：
-   ```bash
-   set -a && source .env && set +a
-   tunnel-client admin tunnels get <tunnel_id> --json
-   ```
-   若需重新生成 profile 可参考：
-   ```bash
-   tunnel-client init \
-     --sample sample_mcp_stdio_local \
-     --profile chatgpt-agent-bridge \
-     --tunnel-id tunnel_YOUR_ID \
-     --mcp-command "env WORKSPACE_ROOT=/path/to/your/project node /path/to/chatgpt-agent-bridge/dist/server.js"
-   ```
-3. **ChatGPT 连接器**：ChatGPT 设置 → 连接器 → 新建自定义连接器 → 连接方式选 **Tunnel** → 选择对应的隧道。
-
-### 2. 日常启动与使用
-
-启动隧道（一键脚本：自动读取 `.env` 并启动，前台运行，Ctrl+C 停止）：
+### 步骤 1：安装前置工具
+确保系统已安装 Node.js (>= 18) 与官方 CLI 工具：
 ```bash
-cd /path/to/chatgpt-agent-bridge
-./scripts/start-tunnel.sh            # 启动；若已在运行则仅提示（不打扰进行中的任务）
-./scripts/start-tunnel.sh --restart  # 重启隧道（注意：会中断进行中的任务）
-```
-*(注：修改 `src/` 代码后需先运行 `npm run build` 再重启隧道)*
-
-本地闭环测试（无需 ChatGPT，由脚本扮演虚拟模型驱动真实 Codex）：
-```bash
-npm run test:local
+brew install codex tunnel-client
 ```
 
-### 3. ChatGPT 驱动提示词
+### 步骤 2：获取 OpenAI 平台凭证与连接器配置
+1. **创建隧道 (Tunnel)**：访问 [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels)，点击创建一条新隧道，复制生成的隧道 ID（例如 `tunnel_xxxx`）。
+2. **生成运行时 API Key**：访问 [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys)，创建或复制一个运行时 API 密钥（例如 `sk-...`）。
+3. **绑定 ChatGPT 连接器**：打开 [ChatGPT 连接器设置](https://chatgpt.com/#settings/Connectors)，点击“新建自定义连接器” → 连接方式选择 **Tunnel** → 勾选刚刚创建的隧道。
 
-在 ChatGPT 对话中驱动 Codex（零额度），把下面这段作为驱动提示词发给对话（或直接在 Web 控制台的“⚡ 提示词助手”中一键复制）：
+### 步骤 3：克隆项目与配置环境变量
+```bash
+git clone https://github.com/aicode915/chatgpt-agent-bridge.git
+cd chatgpt-agent-bridge
+
+# 从模板创建 .env（该文件已被 .gitignore 忽略，不会提交至仓库）
+cp .env.example .env
+```
+用编辑器打开 `.env` 并填入步骤 2 中获取的凭证：
+```bash
+CONTROL_PLANE_TUNNEL_ID=tunnel_xxxx
+CONTROL_PLANE_API_KEY=sk-...
+```
+
+### 步骤 4：一键启动服务
+在项目根目录下直接运行一键启动脚本：
+```bash
+./scripts/start-tunnel.sh
+```
+> **✨ 全自动零配置**：首次运行时，脚本会自动执行 `npm install`、`npm run build`，并自动为当前项目路径完成 `tunnel-client` Profile 的初始化，免去繁琐的手工配置。
+> - 若服务已在运行需平滑重启：`./scripts/start-tunnel.sh --restart`
+> - 本地无 ChatGPT 闭环测试：`npm run test:local`
+
+### 步骤 5：在 ChatGPT 中驱动 Codex
+1. 打开浏览器访问内置 Web 控制台：👉 **http://127.0.0.1:8791**
+2. 点击页面上的 **“一键复制驱动提示词”**；
+3. 将复制的提示词发给 ChatGPT 会话，并附带你想执行的编码任务（例如：“请检查当前项目目录结构并运行测试”）；
+4. ChatGPT 将通过 Tunnel 调用 MCP 工具，在本地零额度安全驱动 Codex 编码！
+
+---
+
+### 环境变量完整说明 (Environment Variables)
+
+所有配置均可在 `.env` 中声明：
+
+| 环境变量 | 必需 | 默认值 | 说明 |
+|---|---|---|---|
+| `CONTROL_PLANE_TUNNEL_ID` | **是** | - | OpenAI Platform 隧道 ID（绑定的 ChatGPT Connector） |
+| `CONTROL_PLANE_API_KEY` | **是** | - | OpenAI Platform 运行时 API 密钥 |
+| `BRIDGE_PORT` | 否 | `8791` | 本地虚拟模型 Bridge 端口与 Web 控制台访问端口 |
+| `WORKSPACE_ROOT` | 否 | 当前项目目录 | Codex 默认允许操作的工作区根路径（可在 Web 控制台随时添加与切换） |
+| `TURN_IDLE_TIMEOUT_SECS` | 否 | `60` | 单轮交互空闲超时（秒）。超时后自动优雅收尾为 `finished` |
+| `CODEX_BIN` | 否 | `codex` | Codex CLI 可执行文件路径 |
+| `NO_PROXY` | 否 | `127.0.0.1,localhost` | 代理忽略地址列表 |
+
+---
+
+### ChatGPT 驱动提示词模板 (Driver Prompt)
+
+在 ChatGPT 对话中驱动 Codex，把下面这段作为驱动提示词发给对话（或直接在 Web 控制台的“⚡ 提示词助手”中一键复制）：
 ```text
 你是驱动本机 Codex 的“模型”。流程：
 1) 需要执行本机编码任务时调用 codex_start(prompt, cwd, mode)（mode 默认以 Web 控制台配置为准）。
