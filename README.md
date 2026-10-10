@@ -122,10 +122,20 @@ Run the smart launcher in the project root:
 > - Local closed-loop test without ChatGPT: `npm run test:local`
 
 ### Step 5: Drive Codex from ChatGPT
-1. Open the built-in Web Dashboard in your browser: 👉 **http://127.0.0.1:8791**
-2. Click **"Copy Driver Prompt"** (or switch to the "⚡ Prompt Assistant" tab).
-3. Paste the prompt into a ChatGPT conversation along with your coding task (e.g., *"Please review the repository structure and run tests"*).
-4. ChatGPT will invoke MCP tools through the secure tunnel, driving local Codex with zero API quota consumption!
+Open the built-in Web Dashboard in your browser: 👉 **http://127.0.0.1:8791**. In the "⚡ Prompt Assistant" tab, three usage modes are supported (ranked by recommendation):
+
+#### 🌟 Option A (Highly Recommended · Universal & Free · Zero-Friction): Set as Custom Instructions
+1. In ChatGPT, click your avatar / settings &rarr; **Personalization** &rarr; **Custom Instructions**;
+2. In the second box **"How would you like ChatGPT to respond?"**, paste the driver prompt template below;
+3. Enable and save. From now on, in **any standard conversation**, whenever you ask ChatGPT to perform coding tasks (e.g., *"Review tests in the current repo"*), ChatGPT will automatically invoke the MCP tools to drive local Codex — **no need to copy-paste prompts ever again**!
+
+#### 🌟 Option B (For Plus / Team Subscribers): Create a Dedicated Custom GPT
+1. Go to [ChatGPT GPT Editor](https://chatgpt.com/gpts/editor), create a GPT named `Local Codex Assistant`;
+2. Paste the driver prompt into **Instructions**, and check your Tunnel connector under **Capabilities / Connectors**;
+3. Save and pin it to your sidebar for dedicated one-click access.
+
+#### Option C (Temporary Single Session): Copy to Current Chat
+Click **"Copy Driver Prompt"** in the Web Dashboard, and paste it directly into a fresh ChatGPT chat.
 
 ---
 

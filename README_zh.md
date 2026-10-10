@@ -122,10 +122,20 @@ CONTROL_PLANE_API_KEY=sk-...
 > - 本地无 ChatGPT 闭环测试：`npm run test:local`
 
 ### 步骤 5：在 ChatGPT 中驱动 Codex
-1. 打开浏览器访问内置 Web 控制台：👉 **http://127.0.0.1:8791**
-2. 点击页面上的 **“一键复制驱动提示词”**；
-3. 将复制的提示词发给 ChatGPT 会话，并附带你想执行的编码任务（例如：“请检查当前项目目录结构并运行测试”）；
-4. ChatGPT 将通过 Tunnel 调用 MCP 工具，在本地零额度安全驱动 Codex 编码！
+打开浏览器访问内置 Web 控制台：👉 **http://127.0.0.1:8791**。在“⚡ 提示词助手”中，我们提供了三种使用方式（按推荐度排序）：
+
+#### 🌟 方式 A（强烈推荐·全员免费可用·彻底免去每次复制）：配置为 ChatGPT 自定义指令
+1. 打开 ChatGPT 网页，点击左下角头像/设置 &rarr; 选择 **Personalization (个性化)** &rarr; **Custom Instructions (自定义指令)**；
+2. 在第二个输入框 **“How would you like ChatGPT to respond? (你希望 ChatGPT 如何响应？)”** 中，粘贴下方的驱动提示词模板；
+3. 保存开启。以后在**任何普通对话**中只要对 ChatGPT 说“*帮我检查当前项目的测试*”，ChatGPT 就会自动调用 MCP 工具驱动本机 Codex，**彻底告别每次手动复制粘贴长文本提示词**！
+
+#### 🌟 方式 B（Plus / Team 订阅用户）：创建专属 Custom GPT
+1. 访问 [ChatGPT GPT Editor](https://chatgpt.com/gpts/editor)，创建一个名为 `Local Codex Assistant` 的专属 GPT；
+2. 将下方的驱动提示词填入 **Instructions (指令)**，并在 **Capabilities / Connectors** 勾选绑定的 Tunnel 连接器；
+3. 保存后常驻在左侧边栏，点击即用，独立上下文。
+
+#### 方式 C（临时单次使用）：复制并贴入当前聊天
+在 Web 控制台点击 **“一键复制驱动提示词”**，粘贴到当前的普通聊天窗口中即可。
 
 ---
 

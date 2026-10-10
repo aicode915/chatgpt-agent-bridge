@@ -400,15 +400,47 @@ export function renderDashboardHtml(): string {
 
     <!-- TAB 4: 提示词助手 -->
     <div id="tab-prompt" class="tab-pane">
+      <!-- 推荐用法一：自定义指令 -->
+      <div class="card" style="border-left: 4px solid var(--success);">
+        <div class="card-header">
+          <div class="card-title">🌟 推荐方案一（彻底免去每次复制·全员通用）：配置为 ChatGPT 自定义指令</div>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 10px;">
+          配置一次后，在<strong>任何普通 ChatGPT 对话</strong>中只要提到编码任务，ChatGPT 就会自动调用工具驱动本机 Codex，<strong>无需每次手动复制粘贴长文本提示词</strong>（免费账号与付费账号均支持）：
+        </p>
+        <ol style="font-size: 13px; color: var(--text-muted); padding-left: 20px; line-height: 1.8; margin-bottom: 12px;">
+          <li>打开 ChatGPT 网页，点击左下角头像/设置 &rarr; 选择 <strong>Personalization (个性化)</strong> &rarr; <strong>Custom Instructions (自定义指令)</strong>；</li>
+          <li>在第二个输入框 <strong>“How would you like ChatGPT to respond? (你希望 ChatGPT 如何响应？)”</strong> 中，点击下方按钮一键复制并粘贴填入；</li>
+          <li>保存开启即可！</li>
+        </ol>
+      </div>
+
+      <!-- 推荐用法二：Custom GPT -->
+      <div class="card" style="border-left: 4px solid var(--primary);">
+        <div class="card-header">
+          <div class="card-title">🌟 推荐方案二（Plus / Team 订阅用户）：创建专属 Custom GPT</div>
+          <a class="btn btn-secondary btn-sm" href="https://chatgpt.com/gpts/editor" target="_blank" rel="noopener noreferrer">👉 打开 GPT 编辑器</a>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.6; margin-bottom: 10px;">
+          若您订阅了 ChatGPT Plus / Team / Pro，可创建一个专属的 <code>Local Codex Assistant</code>：
+        </p>
+        <ol style="font-size: 13px; color: var(--text-muted); padding-left: 20px; line-height: 1.8; margin-bottom: 0;">
+          <li>访问 <a href="https://chatgpt.com/gpts/editor" target="_blank" style="color: var(--primary);">GPT Editor</a>，在 <strong>Instructions (指令)</strong> 粘贴下方的系统提示词；</li>
+          <li>在 <strong>Capabilities / Connectors</strong> 中勾选绑定的 Tunnel 连接器；</li>
+          <li>保存后即可在 ChatGPT 侧边栏一键点击使用，对话即编码！</li>
+        </ol>
+      </div>
+
+      <!-- 提示词预览与一键复制 -->
       <div class="card">
         <div class="card-header">
           <div class="card-title">ChatGPT 驱动系统提示词 (Driver Prompt)</div>
           <button class="btn btn-primary btn-sm" onclick="copyPrompt()">一键复制提示词</button>
         </div>
         <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
-          根据当前控制台配置的<strong>默认工作目录</strong>和<strong>安全锁最高权限</strong>，自动生成给 ChatGPT 对话的最佳驱动指令：
+          已根据当前控制台配置的<strong>默认工作目录</strong>和<strong>安全锁最高权限</strong>动态生成：
         </p>
-        <div class="terminal-view" id="prompt-preview" style="max-height: 400px; color: #a5f3fc;"></div>
+        <div class="terminal-view" id="prompt-preview" style="max-height: 320px; color: #a5f3fc;"></div>
       </div>
     </div>
 
