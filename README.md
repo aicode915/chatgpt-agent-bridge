@@ -198,3 +198,4 @@ Planned improvements for open-source releases:
 ## Health Check
 
 The MCP server itself communicates over stdio. The embedded model bridge exposes a local debug endpoint at `http://127.0.0.1:<BRIDGE_PORT>/healthz`; the `tunnel-client` admin surface is at `http://127.0.0.1:8080` (`tunnel-client health --url http://127.0.0.1:8080`). Validate end-to-end connectivity through the Secure MCP Tunnel and an actual MCP tool call.
+<!-- push test: 2026-10-10 -->

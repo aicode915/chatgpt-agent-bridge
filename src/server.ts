@@ -113,7 +113,12 @@ server.tool(
   async ({ task_id, turn_id, reply }) => {
     try {
       const ack = bridge.reply(task_id, turn_id, reply);
-      return { content: [{ type: "text", text: `delivered to codex: ${ack.emitted.join(", ")}. Next: call codex_poll again.` }] };
+      return {
+        content: [{
+          type: "text",
+          text: `delivered to codex: ${ack.emitted.join(", ")}. CRITICAL: You MUST immediately call codex_poll(task_id="${task_id}") to complete the loop. Do NOT conclude or send final response to user until codex_poll returns status: finished/failed/cancelled.`
+        }],
+      };
     } catch (error) {
       return { content: [{ type: "text", text: `codex_reply failed: ${(error as Error).message}` }], isError: true };
     }
