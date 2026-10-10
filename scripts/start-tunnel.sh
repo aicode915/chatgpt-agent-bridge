@@ -19,9 +19,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$PROJECT_DIR"
 
+if ! command -v tunnel-client >/dev/null 2>&1; then
+  echo "✗ 未检测到 'tunnel-client' 命令。请先安装 OpenAI 官方 tunnel-client 工具：" >&2
+  echo "  参考：brew install tunnel-client 或访问 https://platform.openai.com/settings/organization/tunnels" >&2
+  exit 1
+fi
+
+if ! command -v codex >/dev/null 2>&1; then
+  echo "⚠️ 提示：系统 PATH 中未检测到 'codex' 命令。Codex CLI (>= 0.161.0) 为必需依赖：" >&2
+  echo "  参考：brew install codex 或访问 https://github.com/openai/codex" >&2
+fi
+
 if [ ! -f .env ]; then
-  echo "✗ 缺少 $PROJECT_DIR/.env（需要 CONTROL_PLANE_API_KEY 和 CONTROL_PLANE_TUNNEL_ID）" >&2
-  echo "  可参考 .env.example 创建" >&2
+  echo "✗ 缺少 $PROJECT_DIR/.env（需要配置 CONTROL_PLANE_API_KEY 和 CONTROL_PLANE_TUNNEL_ID）" >&2
+  echo "  请先复制模板创建：cp .env.example .env 并填入实际凭证" >&2
   exit 1
 fi
 
@@ -36,8 +47,32 @@ if [ -z "${CONTROL_PLANE_API_KEY:-}" ]; then
 fi
 
 if [ -z "${CONTROL_PLANE_TUNNEL_ID:-}" ]; then
-  echo "✗ .env 里缺少 CONTROL_PLANE_TUNNEL_ID（= ChatGPT 连接器绑定的那条隧道 id）" >&2
+  echo "✗ .env 里缺少 CONTROL_PLANE_TUNNEL_ID（= ChatGPT 连接器绑定的那条隧道 ID）" >&2
   exit 1
+fi
+
+# 自动安装依赖与自动编译
+if [ ! -d "$PROJECT_DIR/node_modules" ]; then
+  echo "→ 首次启动：未检测到 node_modules，正在自动执行 npm install..."
+  npm install
+fi
+
+if [ ! -f "$PROJECT_DIR/dist/server.js" ]; then
+  echo "→ 未检测到编译产物 dist/server.js，正在自动编译 (npm run build)..."
+  npm run build
+fi
+
+# 检查并自动初始化 tunnel-client profile
+PROFILE_YAML="${HOME}/.config/tunnel-client/${PROFILE}.yaml"
+if [ ! -f "$PROFILE_YAML" ]; then
+  echo "→ 首次启动：正在为您自动初始化 tunnel profile: ${PROFILE}..."
+  NODE_BIN="$(command -v node)"
+  tunnel-client init \
+    --sample sample_mcp_stdio_local \
+    --profile "$PROFILE" \
+    --tunnel-id "$CONTROL_PLANE_TUNNEL_ID" \
+    --mcp-command "env WORKSPACE_ROOT=${PROJECT_DIR} ${NODE_BIN} ${PROJECT_DIR}/dist/server.js" \
+    --force
 fi
 
 RUNNING_PATTERN="tunnel-client run --profile ${PROFILE}"

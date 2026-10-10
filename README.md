@@ -36,8 +36,8 @@ ChatGPT conversation
 |---|---|---|
 | **Node.js** | `>= 18.0.0` (Recommended 20+) | Runtime for the server, requires ES Modules and Top-level await |
 | **npm** | `>= 9.0.0` | Node package manager |
-| **Codex CLI** | `>= 0.161.0` | **Required**. Codex 0.161 dropped the legacy `chat` wire API; this project is built entirely on Responses API wire format |
-| **tunnel-client** | `>= 0.0.16` | OpenAI official Secure MCP Tunnel client |
+| **Codex CLI** | `>= 0.161.0` | **Required**. Built entirely on Responses API wire format. Install via `brew install codex` or visit [OpenAI Codex](https://github.com/openai/codex) |
+| **tunnel-client** | `>= 0.0.16` | **Required**. OpenAI official Secure MCP Tunnel client. Install via `brew install tunnel-client` or OpenAI Platform |
 | **OS** | macOS / Linux | macOS runs Codex CLI with Apple Seatbelt sandbox isolation |
 | **OpenAI Credentials** | - | ChatGPT subscription (with Custom Connectors support) and OpenAI Platform Tunnel credentials (`CONTROL_PLANE_TUNNEL_ID` & `CONTROL_PLANE_API_KEY`) |
 

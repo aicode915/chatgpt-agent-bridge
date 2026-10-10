@@ -36,8 +36,8 @@ ChatGPT 对话
 |---|---|---|
 | **Node.js** | `>= 18.0.0` (推荐 20+) | 服务端运行时，依赖 ES Modules 与 Top-level await |
 | **npm** | `>= 9.0.0` | Node 依赖包管理器 |
-| **Codex CLI** | `>= 0.161.0` | **必需**。Codex 0.161 起彻底移除了旧版 `wire_api = "chat"`，本项目完全基于 Responses API wire format 实现，低版本无法握手 |
-| **tunnel-client** | `>= 0.0.16` | OpenAI 官方 Secure MCP Tunnel 客户端 |
+| **Codex CLI** | `>= 0.161.0` | **必需**。Codex 0.161 起彻底移除了旧版 `wire_api = "chat"`，本项目完全基于 Responses API wire format 实现。安装：`brew install codex` 或访问 [OpenAI Codex](https://github.com/openai/codex) |
+| **tunnel-client** | `>= 0.0.16` | **必需**。OpenAI 官方 Secure MCP Tunnel 客户端。安装：`brew install tunnel-client` 或从 OpenAI 平台下载 |
 | **操作系统** | macOS / Linux | macOS 下 Codex CLI 默认启用 Apple Seatbelt 沙箱保护 |
 | **OpenAI 平台凭证** | - | 需要 ChatGPT 账号（支持 Connectors 自定义连接器）以及 OpenAI Platform 组织下的 Tunnel 访问凭证 (`CONTROL_PLANE_TUNNEL_ID` & `CONTROL_PLANE_API_KEY`) |
 
