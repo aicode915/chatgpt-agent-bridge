@@ -67,11 +67,15 @@ PROFILE_YAML="${HOME}/.config/tunnel-client/${PROFILE}.yaml"
 if [ ! -f "$PROFILE_YAML" ]; then
   echo "→ 首次启动：正在为您自动初始化 tunnel profile: ${PROFILE}..."
   NODE_BIN="$(command -v node)"
+  MCP_CMD="${NODE_BIN} ${PROJECT_DIR}/dist/server.js"
+  if [ -n "${WORKSPACE_ROOT:-}" ]; then
+    MCP_CMD="env WORKSPACE_ROOT=${WORKSPACE_ROOT} ${MCP_CMD}"
+  fi
   tunnel-client init \
     --sample sample_mcp_stdio_local \
     --profile "$PROFILE" \
     --tunnel-id "$CONTROL_PLANE_TUNNEL_ID" \
-    --mcp-command "env WORKSPACE_ROOT=${PROJECT_DIR} ${NODE_BIN} ${PROJECT_DIR}/dist/server.js" \
+    --mcp-command "$MCP_CMD" \
     --force
 fi
 

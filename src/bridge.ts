@@ -23,6 +23,7 @@ import http from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
 import { ConfigManager } from "./config.js";
 import { renderDashboardHtml } from "./dashboard.js";
+import { pickDirectoryDialog } from "./system.js";
 
 export type TaskMode = "read-only" | "workspace-write" | "danger-full-access";
 export type TaskStatus = "running" | "finished" | "failed" | "cancelled" | "abandoned";
@@ -1052,6 +1053,33 @@ export class ModelBridge {
           }
         } catch (err) {
           res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: (err as Error).message }));
+        }
+        return;
+      }
+      if (req.method === "POST" && url === "/api/system/select-directory") {
+        try {
+          const resDialog = await pickDirectoryDialog();
+          if (resDialog.cancelled) {
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ cancelled: true }));
+            return;
+          }
+          if (resDialog.error) {
+            res.writeHead(400, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: resDialog.error }));
+            return;
+          }
+          if (resDialog.path) {
+            const added = this.configManager.addWorkspace(resDialog.path);
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ success: true, path: added }));
+            return;
+          }
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "未选择任何有效目录" }));
+        } catch (err) {
+          res.writeHead(500, { "content-type": "application/json" });
           res.end(JSON.stringify({ error: (err as Error).message }));
         }
         return;

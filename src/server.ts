@@ -5,8 +5,7 @@ import { z } from "zod";
 import { ModelBridge } from "./bridge.js";
 import { ConfigManager } from "./config.js";
 
-const ROOT = path.resolve(process.env.WORKSPACE_ROOT ?? process.cwd());
-const configManager = new ConfigManager(ROOT);
+const configManager = new ConfigManager();
 
 // 本地"虚拟模型"端点：codex 的模型请求会打到这里，由 ChatGPT 对话作答。
 const bridge = new ModelBridge({ configManager });
@@ -22,10 +21,15 @@ try {
 
 function safeCwd(input?: string): string {
   const base = configManager.get().activeWorkspace;
-  const resolved = input ? path.resolve(base, input) : base;
+  if (!base) {
+    throw new Error(
+      `未配置有效的工作区目录。请先在 Web 控制台 (http://127.0.0.1:${bridge.port}) 的“项目目录管理”中点击【📁 选择本地目录】添加并设置默认项目。`
+    );
+  }
+  const resolved = input && input !== "." ? path.resolve(base, input) : base;
   if (!configManager.isPathAllowed(resolved)) {
     throw new Error(
-      `Path '${resolved}' is outside allowed workspaces. Add it via the Web Dashboard (http://127.0.0.1:${bridge.port}) first.`
+      `路径 '${resolved}' 未在允许访问的工作区白名单中。请先在 Web 控制台 (http://127.0.0.1:${bridge.port}) 的“项目目录管理”中添加该目录。`
     );
   }
   return resolved;

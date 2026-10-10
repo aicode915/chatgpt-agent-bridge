@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { type TaskMode } from "./bridge.js";
 
 export interface BridgeConfigData {
@@ -14,17 +15,37 @@ const MODE_RANKS: Record<TaskMode, number> = {
   "danger-full-access": 3,
 };
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const BRIDGE_ROOT = path.resolve(__dirname, "..");
+
 export class ConfigManager {
   readonly configPath: string;
   private data: BridgeConfigData;
 
-  constructor(baseDir: string = process.cwd()) {
-    const defaultRoot = path.resolve(process.env.WORKSPACE_ROOT ?? baseDir);
-    this.configPath = path.resolve(defaultRoot, "bridge-config.json");
+  constructor(customPathOrDir?: string) {
+    if (customPathOrDir) {
+      const resolved = path.resolve(customPathOrDir);
+      try {
+        if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+          this.configPath = path.resolve(resolved, "bridge-config.json");
+        } else if (resolved.endsWith(".json")) {
+          this.configPath = resolved;
+        } else {
+          this.configPath = path.resolve(resolved, "bridge-config.json");
+        }
+      } catch {
+        this.configPath = path.resolve(resolved, "bridge-config.json");
+      }
+    } else {
+      this.configPath = path.resolve(BRIDGE_ROOT, "bridge-config.json");
+    }
+
+    const envWorkspace = process.env.WORKSPACE_ROOT ? path.resolve(process.env.WORKSPACE_ROOT) : "";
     this.data = {
       maxAllowedMode: "workspace-write",
-      allowedWorkspaces: [defaultRoot],
-      activeWorkspace: defaultRoot,
+      allowedWorkspaces: envWorkspace ? [envWorkspace] : [],
+      activeWorkspace: envWorkspace,
     };
     this.load();
   }
@@ -37,11 +58,11 @@ export class ConfigManager {
         if (parsed.maxAllowedMode && ["read-only", "workspace-write", "danger-full-access"].includes(parsed.maxAllowedMode)) {
           this.data.maxAllowedMode = parsed.maxAllowedMode;
         }
-        if (Array.isArray(parsed.allowedWorkspaces) && parsed.allowedWorkspaces.length > 0) {
+        if (Array.isArray(parsed.allowedWorkspaces)) {
           this.data.allowedWorkspaces = parsed.allowedWorkspaces.map((p) => path.resolve(p));
         }
-        if (parsed.activeWorkspace && typeof parsed.activeWorkspace === "string") {
-          this.data.activeWorkspace = path.resolve(parsed.activeWorkspace);
+        if (typeof parsed.activeWorkspace === "string") {
+          this.data.activeWorkspace = parsed.activeWorkspace ? path.resolve(parsed.activeWorkspace) : "";
         }
       }
     } catch (err) {
@@ -84,19 +105,19 @@ export class ConfigManager {
     }
     if (!this.data.allowedWorkspaces.includes(resolved)) {
       this.data.allowedWorkspaces.push(resolved);
-      this.save();
     }
+    if (!this.data.activeWorkspace) {
+      this.data.activeWorkspace = resolved;
+    }
+    this.save();
     return resolved;
   }
 
   removeWorkspace(targetPath: string): void {
     const resolved = path.resolve(targetPath);
-    if (this.data.allowedWorkspaces.length <= 1) {
-      throw new Error("Cannot remove the only remaining workspace");
-    }
     this.data.allowedWorkspaces = this.data.allowedWorkspaces.filter((p) => p !== resolved);
     if (this.data.activeWorkspace === resolved) {
-      this.data.activeWorkspace = this.data.allowedWorkspaces[0];
+      this.data.activeWorkspace = this.data.allowedWorkspaces[0] ?? "";
     }
     this.save();
   }
@@ -112,6 +133,9 @@ export class ConfigManager {
   }
 
   isPathAllowed(targetPath: string): boolean {
+    if (this.data.allowedWorkspaces.length === 0) {
+      return false;
+    }
     const resolved = path.resolve(targetPath);
     return this.data.allowedWorkspaces.some(
       (root) => resolved === root || resolved.startsWith(root + path.sep),

@@ -391,9 +391,15 @@ export function renderDashboardHtml(): string {
         <div class="card-header" style="margin-top: 24px;">
           <div class="card-title">添加新项目目录</div>
         </div>
-        <div style="display: flex; gap: 10px; max-width: 600px;">
-          <input type="text" id="new-workspace-input" placeholder="/Users/username/my-project">
-          <button class="btn btn-primary" onclick="addWorkspace()">添加目录</button>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+          可点击下方按钮直接调起系统文件管理器选择本地文件夹，或在输入框中粘贴绝对路径：
+        </p>
+        <div style="display: flex; gap: 10px; max-width: 650px; flex-wrap: wrap; align-items: center;">
+          <button class="btn btn-primary" id="btn-pick-folder" onclick="pickDirectory()" style="display: inline-flex; align-items: center; gap: 6px;">
+            📁 选择本地目录 (浏览)
+          </button>
+          <input type="text" id="new-workspace-input" placeholder="或手动粘贴绝对路径，例如 /Users/username/my-project" style="flex: 1; min-width: 250px;">
+          <button class="btn btn-secondary" onclick="addWorkspace()">手动添加</button>
         </div>
       </div>
     </div>
@@ -620,7 +626,7 @@ export function renderDashboardHtml(): string {
       document.getElementById('hdr-port').innerText = data.bridge.port;
       document.getElementById('hdr-security').innerText = data.config.maxAllowedMode;
       document.getElementById('stat-mode').innerText = data.config.maxAllowedMode;
-      document.getElementById('stat-workspace').innerText = data.config.activeWorkspace;
+      document.getElementById('stat-workspace').innerText = data.config.activeWorkspace || '未设置 (请添加目录)';
       document.getElementById('sys-node-version').innerText = data.system.nodeVersion;
       document.getElementById('sys-config-path').innerText = data.config.configPath;
 
@@ -681,7 +687,7 @@ export function renderDashboardHtml(): string {
     function renderWorkspaces(list, active) {
       const tbody = document.getElementById('workspaces-table-body');
       if (!list || list.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3">暂无工作区</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: var(--text-muted); padding: 24px;">暂无允许的项目目录。请点击下方“📁 选择本地目录”添加你的项目工程。</td></tr>';
         return;
       }
       tbody.innerHTML = list.map(item => {
@@ -689,12 +695,37 @@ export function renderDashboardHtml(): string {
         return \`<tr>
           <td><code>\${item}</code></td>
           <td>\${isActive ? '<span style="color: var(--success); font-weight: 600;">● 当前默认</span>' : '<span style="color: var(--text-muted);">允许</span>'}</td>
-          <td>
-            \${!isActive ? \`<button class="btn btn-secondary btn-sm" onclick="setActiveWorkspace('\${encodeURIComponent(item)}')">设为默认</button>\` : ''}
-            \${list.length > 1 ? \`<button class="btn btn-danger btn-sm" onclick="removeWorkspace('\${encodeURIComponent(item)}')">删除</button>\` : ''}
+          <td style="white-space: nowrap;">
+            \${!isActive ? \`<button class="btn btn-secondary btn-sm" style="margin-right: 6px;" onclick="setActiveWorkspace('\${encodeURIComponent(item)}')">设为默认</button>\` : ''}
+            <button class="btn btn-danger btn-sm" onclick="removeWorkspace('\${encodeURIComponent(item)}')">删除</button>
           </td>
         </tr>\`;
       }).join('');
+    }
+
+    async function pickDirectory() {
+      const btn = document.getElementById('btn-pick-folder');
+      const originalText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '⏳ 正在等待选择目录...';
+      try {
+        const res = await fetch('/api/system/select-directory', { method: 'POST' });
+        const data = await res.json();
+        if (data.cancelled) {
+          return;
+        }
+        if (data.success && data.path) {
+          showToast('已成功添加项目目录：' + data.path);
+          fetchStatus();
+        } else if (data.error) {
+          alert('选择失败: ' + data.error);
+        }
+      } catch (e) {
+        alert('调用本地目录选择器失败，请检查服务连接或使用手动输入');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalText;
+      }
     }
 
     async function addWorkspace() {
@@ -958,8 +989,9 @@ export function renderDashboardHtml(): string {
         ? '- 需连外网（如 git push、安装远程包）：mode="danger-full-access"\\n   - 修改文件/本地测试：mode="workspace-write"'
         : '- 修改文件/本地测试/本地 commit：mode="workspace-write"\\n   - 只读查看：mode="read-only"';
 
+      const cwdVal = cfg.activeWorkspace ? cfg.activeWorkspace : '<请在控制台添加并设置工作目录>';
       const promptText = \`你是驱动本机 Codex 的“模型”。流程：
-1) 需要执行本机编码任务时调用 codex_start(prompt, cwd="\${cfg.activeWorkspace}", mode)（当前安全锁最高模式: \${cfg.maxAllowedMode}）。
+1) 需要执行本机编码任务时调用 codex_start(prompt, cwd="\${cwdVal}", mode)（当前安全锁最高模式: \${cfg.maxAllowedMode}）。
    \${modeHint}
 2) 循环：调用 codex_poll(task_id, wait_secs≈25)：
    - status=model_request：按返回文本里的 REPLY PROTOCOL，用 codex_reply(task_id, turn_id, reply) 作答；
