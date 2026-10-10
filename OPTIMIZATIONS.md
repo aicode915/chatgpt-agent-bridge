@@ -22,18 +22,13 @@
 
 ## 一、 用户体验与产品形态优化（UX & Packaging）
 
-### 1. 消除重复复制提示词的摩擦（Custom GPT / 自定义指令）
+### 1. 消除重复复制提示词的摩擦（ChatGPT 自定义指令）
 - **现状痛点**：目前每次在新 ChatGPT 会话中唤起 Codex，开发者都必须手动复制长篇 Driver Prompt。
 - **优化方案**：
-  - **方案 A（Plus / Team 用户）- 专属 Custom GPT**：
-    - 创建名为 `Local Codex Assistant` 的自定义 GPT，在系统指令（Instructions）中固化驱动协议并绑定 Tunnel Connector。
-    - 用户进入该 GPT 发起任何日常对话，AI 均自动遵循协议驱动本机 Codex。
-    - 直达链接：`https://chatgpt.com/gpts/editor`
-  - **方案 B（全员通用 / 免费账户友好）- ChatGPT 自定义指令 (Custom Instructions)**：
+  - **ChatGPT 自定义指令 (Custom Instructions) - 全员通用 / 零门槛**：
     - 路径：`设置 -> 个性化 (Personalization) -> 自定义指令 (Custom Instructions)`。
-    - 在“你希望 ChatGPT 如何响应”中追加触发规则（例如：“当需要操作本机代码或提到 codex 时，使用本地 Bridge 协议”），在所有对话中自动全局生效。
-  - **方案 C - ChatGPT Projects**：
-    - 针对 ChatGPT Team/Enterprise 用户，在 Projects 的 Instructions 中注入提示词。
+    - 在“你希望 ChatGPT 如何响应”中填入驱动协议，免费与付费账号均支持。
+    - 配置一次即可在所有对话中自动全局生效，用户只要对 ChatGPT 说“*帮我重构代码*”，AI 即自动调用工具驱动本机 Codex，彻底免去每次复制。
 
 ### 2. CLI 极简分发（npm / npx 与交互式配置向导）
 - **现状痛点**：目前需要手动执行 `git clone`、`npm install`、`cp .env.example .env` 并编辑配置。
@@ -98,7 +93,7 @@
 
 | 阶段 | 事项 | 类型 | 预计成本 | 预期收益 |
 |:---:|---|:---:|:---:|:---:|
-| **近期 (P0)** | 完善文档指引（Custom GPT / 自定义指令配置流程） | 用户体验 | 极低 | ⭐⭐⭐⭐⭐ 彻底解决重复复制提示词 |
+| **近期 (P0)** | 完善文档指引（ChatGPT 全局自定义指令配置流程） | 用户体验 | 极低 | ⭐⭐⭐⭐⭐ 彻底解决重复复制提示词 |
 | **近期 (P1)** | 交互式命令行配置向导 (Setup Wizard) | 易用性 | 低 | ⭐⭐⭐⭐ 降低开源用户初次配置门槛 |
 | **中期 (P2)** | 发布 npm 包支持 `npx` 启动 | 分发部署 | 中 | ⭐⭐⭐⭐ 无需 clone 代码库 |
 | **中期 (P3)** | Web 控制台 Git Diff 可视化 | 监控体验 | 中 | ⭐⭐⭐⭐ 直观复核 AI 代码变更 |
