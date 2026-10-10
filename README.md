@@ -1,95 +1,97 @@
 # ChatGPT Agent Bridge
 
-A minimal local MCP server for **ChatGPT → Secure MCP Tunnel → local machine**.
+**English** | [简体中文](README_zh.md)
+
+A minimal, high-efficiency local MCP server for **ChatGPT → OpenAI Secure MCP Tunnel → Local Machine**.
 
 The bridge performs **no file/command execution of its own** — every action is executed by the locally installed **Codex CLI**, driven as a quota-free virtual model by the ChatGPT conversation:
 
-- `codex_start` spawns `codex exec` with a per-process model-provider override so codex's model requests go to a local endpoint inside this plugin.
+- `codex_start` spawns `codex exec` with a per-process model-provider override (`-c model_provider=bridge`) so Codex's model requests go to the embedded local endpoint inside this bridge.
 - Each request is handed to the ChatGPT conversation itself (`codex_poll`), which answers as the model (`codex_reply`).
-- Codex never calls OpenAI's model API for these runs; the ChatGPT subscription powers it.
+- Codex never calls OpenAI's model API for these runs; your standard ChatGPT Plus/Team subscription powers it with **zero API token quota consumed**.
+
+---
 
 ## Architecture
 
-```
+```text
 ChatGPT conversation
 → OpenAI Secure MCP Tunnel
 → this MCP server (stdio; NO direct file/command tools — all execution happens inside codex)
    └─ quota-free Codex flow:
-        codex_start → local `codex exec` (per-process `-c model_provider=bridge`; global ~/.codex/config.toml untouched)
+        codex_start → local `codex exec` (per-process override `-c model_provider=bridge`; ~/.codex/config.toml untouched)
         codex model request → http://127.0.0.1:<BRIDGE_PORT>/t/<task_id>/v1/responses (Responses API SSE)
-        codex_poll → hands the request + tools to ChatGPT
+        codex_poll → hands the request + tools to ChatGPT conversation
         codex_reply → ChatGPT answers as the model (message / exec JS / function_call / reasoning)
-        … loop until codex exits; then codex_poll returns the final result
+        … loop until codex exits; then codex_poll returns final stdout / stderr
 ```
 
-Wire-protocol notes: codex ≥ 0.161 requires the **Responses API** wire format (`wire_api = "chat"` was removed upstream — see openai/codex discussion #7782). The bridge implements the minimal SSE contract codex needs (`response.created` → `response.output_item.done` → `response.completed`). No ACP; the bridge itself never runs shell commands.
+**Wire-Protocol Notes**: Codex $\ge$ 0.161 requires the **OpenAI Responses API** wire format (`wire_api = "chat"` was removed upstream — see openai/codex discussion #7782). The bridge implements the minimal SSE contract Codex needs (`response.created` $\to$ `response.output_item.added` $\to$ `response.output_text.delta` $\to$ `response.output_item.done` $\to$ `response.completed`).
 
-## Prerequisites & Version Requirements / 环境与依赖要求
+---
 
-| 组件 / 依赖 | 最低版本要求 | 说明 |
+## Prerequisites & Version Requirements
+
+| Component / Dependency | Minimum Version | Description |
 |---|---|---|
-| **Node.js** | `>= 18.0.0` (推荐 20+) | 服务端运行时，依赖 ES Modules 与 Top-level await |
-| **npm** | `>= 9.0.0` | Node 依赖包管理器 |
-| **Codex CLI** | `>= 0.161.0` | **必需**。Codex 0.161 起彻底移除了旧版 `wire_api = "chat"`，本项目完全基于 Responses API wire format 实现，低版本无法握手 |
-| **tunnel-client** | `>= 0.0.16` | OpenAI 官方 Secure MCP Tunnel 客户端 |
-| **操作系统** | macOS / Linux | macOS 下 Codex CLI 默认启用 Apple Seatbelt 沙箱保护 |
-| **OpenAI 平台凭证** | - | 需要 ChatGPT 账号（支持 Connectors 自定义连接器）以及 OpenAI Platform 组织下的 Tunnel 访问凭证 (`CONTROL_PLANE_TUNNEL_ID` & `CONTROL_PLANE_API_KEY`) |
+| **Node.js** | `>= 18.0.0` (Recommended 20+) | Runtime for the server, requires ES Modules and Top-level await |
+| **npm** | `>= 9.0.0` | Node package manager |
+| **Codex CLI** | `>= 0.161.0` | **Required**. Codex 0.161 dropped the legacy `chat` wire API; this project is built entirely on Responses API wire format |
+| **tunnel-client** | `>= 0.0.16` | OpenAI official Secure MCP Tunnel client |
+| **OS** | macOS / Linux | macOS runs Codex CLI with Apple Seatbelt sandbox isolation |
+| **OpenAI Credentials** | - | ChatGPT subscription (with Custom Connectors support) and OpenAI Platform Tunnel credentials (`CONTROL_PLANE_TUNNEL_ID` & `CONTROL_PLANE_API_KEY`) |
+
+---
 
 ## Tools
 
-- `codex_start` / `codex_poll` / `codex_reply` / `codex_cancel` / `codex_list` — the only tools exposed; the quota-free Codex flow driven by the ChatGPT conversation.
+The MCP server exposes 5 core tools driving the closed-loop Codex execution:
 
-The bridge exposes no direct file/command tools: every operation happens inside the codex subprocess (`codex_start`), confined to the requested project-relative `cwd` (checked against `WORKSPACE_ROOT`) and executed in codex's sandbox modes:
-- `read-only` (default): Read-only filesystem, completely no network access.
-- `workspace-write`: Allows modifying workspace files and local git operations (`git add` / `git commit`), but outbound network is disabled by the Seatbelt sandbox.
-- `danger-full-access`: Full disk access and **full outbound network access** enabled (required for `git push`, installing remote packages, etc.).
+- `codex_start`: Start a Codex CLI session with initial prompt, working directory (`cwd`), timeout, and sandbox permission mode (`mode`).
+- `codex_poll`: Fetch pending model requests (context + tools) for ChatGPT to answer, or wait for the process to finish and return final results.
+- `codex_reply`: Submit ChatGPT's answer as the model (supporting text message, `exec` JS orchestration, function calls, reasoning summary).
+- `codex_cancel`: Terminate a running Codex process.
+- `codex_list`: List currently tracked tasks and pending turns.
 
-## Run locally
+### Sandbox Modes (`mode`)
+All commands run inside Codex's own sandbox:
+- `read-only` (default): Read-only filesystem, **strictly no outbound network**.
+- `workspace-write`: Allows modifying workspace files and local git operations (`git add` / `git commit`), but **outbound network is blocked by Seatbelt**.
+- `danger-full-access`: Full disk access and **full outbound network enabled** (required for `git push`, remote package installation, etc.).
 
-```bash
-cd /Users/liukun/ai_dev/chatgpt-agent-bridge
-npm install
-WORKSPACE_ROOT=/Users/liukun/ai_dev/chatgpt-agent-bridge npm start
-```
+---
 
-The MCP server uses stdio, which is convenient for Secure MCP Tunnel's local stdio mode. The embedded model bridge listens on `127.0.0.1` (env `BRIDGE_PORT`, default `8791`). Note: the tunnel profile runs `dist/server.js` directly — after changing anything under `src/`, run `npm run build` before restarting the tunnel.
+## Web Dashboard
 
-Local closed-loop test (runs the real codex CLI against the plugin, with a script playing the ChatGPT role — zero quota):
+Once started, the embedded Web Dashboard is accessible directly in your browser:
+👉 **http://127.0.0.1:8791** (Configurable via `BRIDGE_PORT`, default: `8791`; single-process embedded, zero extra port/dependency overhead)
 
-```bash
-npm run test:local
-```
+Features:
+1. **📋 Tasks & Session Monitor**: Real-time inspection of active & finished tasks, multi-turn interaction history (ChatGPT's JS/replies and Codex tool outputs), live terminal output streams (stdout/stderr tail), and one-click task cancellation.
+2. **🛡️ Security Policy Lock**: Visual selector for the maximum allowed sandbox mode (`read-only`, `workspace-write`, or `danger-full-access`). **Server enforces hard security checks**: if ChatGPT requests a mode exceeding the lock, the server intercepts and protects your system.
+3. **📁 Workspaces Management**: Manage allowed project root paths (white-list) to prevent path escaping; switch active default workspace with one click.
+4. **⚡ ChatGPT Prompt Assistant**: Dynamically generates tailored driver prompts based on the currently selected workspace and security mode, complete with one-click clipboard copying.
+5. **🔌 Tunnel & System Status**: Live health checks for Secure MCP Tunnel, environment & Codex diagnostics, and one-click tunnel restarting.
 
-## Web 控制台 (Web Dashboard)
+---
 
-服务启动后，内置的 Web 控制台可直接在浏览器访问：
-👉 **http://127.0.0.1:8791**（端口可通过环境变量 `BRIDGE_PORT` 配置，默认 8791；单进程内嵌，零额外依赖与端口开销）
+## Getting Started
 
-控制台包含五大核心功能：
-1. **📋 任务与会话监控**：实时查看 Codex 会话状态（运行中/成功/失败）、多轮交互历史（ChatGPT 的 JS/回复与 Codex 工具输出）、实时 stdout/stderr 日志流，以及一键终止任务。
-2. **🛡️ 服务端安全锁 (Security Policy Lock)**：在页面上可视化配置允许的最高权限等级（`read-only`、`workspace-write` 或 `danger-full-access`）。**服务端实施强制策略校验**：若 ChatGPT 在对话中申请超出限制的模式，服务端将直接拦截，保障本地安全。
-3. **📁 项目目录管理**：查看并添加允许访问的工作区白名单路径（多项目支持），防止路径逃逸；可一键切换默认工作目录。
-4. **⚡ 驱动提示词助手**：根据当前选中的工作区和安全锁权限，自动生成最优的 ChatGPT 驱动 Prompt，并提供一键复制。
-5. **🔌 隧道与系统看板**：检测 Secure MCP Tunnel 连通性、查看 Codex CLI 及环境状态，支持一键重启隧道。
+### 1. One-time Setup
 
-## 使用说明（中文）
-
-### 一次性配置
-
-1. **密钥与隧道 ID**：写进项目根目录的 `.env`（已在 `.gitignore`，不会被提交；可参考 `.env.example`）：
-   ```
+1. **Credentials & Tunnel ID**: Save to `.env` in the project root (already ignored by `.gitignore`; see `.env.example`):
+   ```bash
    CONTROL_PLANE_API_KEY=sk-...
-   CONTROL_PLANE_TUNNEL_ID=tunnel_xxx   # ChatGPT 连接器绑定的那条隧道
+   CONTROL_PLANE_TUNNEL_ID=tunnel_xxx   # The tunnel ID bound to your ChatGPT Connector
    ```
-   `CONTROL_PLANE_TUNNEL_ID` 是 tunnel-client 的官方环境变量，**优先级高于 profile YAML**——改 `.env` 即生效，无需改 profile。
-2. **隧道一致性**：`.env` 的 `CONTROL_PLANE_TUNNEL_ID`（优先）或 profile YAML 的 `tunnel_id`，
-   **必须与 ChatGPT 连接器绑定的隧道一致**（不一致会报 "Tunnel-client has not been seen for 300 seconds"）。
-   核对方式（用 `.env` 里的运行时 key 即可只读查询，看 `name` 字段）：
+   `CONTROL_PLANE_TUNNEL_ID` is the official environment variable for `tunnel-client` and **takes precedence over the profile YAML** — updating `.env` takes effect immediately without modifying profiles.
+2. **Tunnel Verification**:
+   Verify the tunnel ID using your runtime key:
    ```bash
    set -a && source .env && set +a
    tunnel-client admin tunnels get <tunnel_id> --json
    ```
-   重新生成 profile 可参考：
+   To regenerate the profile if needed:
    ```bash
    tunnel-client init \
      --sample sample_mcp_stdio_local \
@@ -97,90 +99,102 @@ npm run test:local
      --tunnel-id tunnel_YOUR_ID \
      --mcp-command "env WORKSPACE_ROOT=/Users/liukun/ai_dev/chatgpt-agent-bridge /opt/homebrew/bin/node /Users/liukun/ai_dev/chatgpt-agent-bridge/dist/server.js"
    ```
-3. **ChatGPT 连接器**：设置 → 连接器 → 新建自定义连接器 → 连接方式选 **Tunnel** → 选择对应的隧道。
+3. **ChatGPT Connector**: In ChatGPT: Settings → Connectors → New Custom Connector → Connection Method: **Tunnel** → Select your tunnel.
 
-### 日常使用
+### 2. Daily Usage & Running
 
-启动隧道（一键脚本：自动读取 `.env` 并启动，前台运行，Ctrl+C 停止）：
+Start the tunnel (one-click script automatically reading `.env`, runs in foreground, Ctrl+C to stop):
 ```bash
 cd ~/ai_dev/chatgpt-agent-bridge
-./scripts/start-tunnel.sh            # 已在运行时仅提示（不打扰进行中的任务）
-./scripts/start-tunnel.sh --restart  # 需要重启时（注意：会中断进行中的任务）
+./scripts/start-tunnel.sh            # Start; prompts if already running
+./scripts/start-tunnel.sh --restart  # Restart tunnel (interrupts ongoing tasks)
 ```
-（等价手动命令：`set -a && source .env && set +a && tunnel-client run --profile chatgpt-agent-bridge`；改过 `src/` 代码先 `npm run build`）
+*(Note: after modifying anything in `src/`, run `npm run build` before restarting the tunnel)*
 
-在 ChatGPT 对话中驱动 Codex（零额度），把下面这段作为驱动提示词发给对话：
-```
-你是驱动本机 Codex 的“模型”。流程：
-1) 需要执行本机编码任务时调用 codex_start(prompt, cwd, mode)（mode 默认 read-only）。
-   - 只读分析：mode="read-only"
-   - 修改文件/本地测试/本地 commit：mode="workspace-write"
-   - 需连外网（如 git push、安装远程包）：mode="danger-full-access"
-2) 循环：调用 codex_poll(task_id, wait_secs≈25)：
-   - status=model_request：按返回文本里的 REPLY PROTOCOL，用 codex_reply(task_id, turn_id, reply) 作答；
-     要执行动作就发 exec 的 JS（如 await tools.exec_command({cmd:"ls"})），目标完成就发最终 message；
-   - status=waiting：稍后再次 poll；
-   - status=finished/failed/cancelled：停止循环，把最终输出整理给用户。
-每步约 2 次工具调用，任务尽量切小；涉及写文件必须指定 mode=workspace-write 或 danger-full-access。
+Local closed-loop test (runs real Codex CLI with a test script playing ChatGPT's role — zero quota):
+```bash
+npm run test:local
 ```
 
-### 沙箱机制与代码提交（Git Commit & Push）
+### 3. ChatGPT Driver Prompt
 
-在通过 ChatGPT 对话修改代码后，如果尝试提交代码（尤其是 `git push`）失败，原因与解决方案如下：
+Paste this prompt into your ChatGPT conversation (or copy it from the Web Dashboard's "⚡ Prompt Assistant" tab):
+```text
+You are the virtual "model" driving the local Codex CLI. Workflow:
+1) When a local coding task is requested, invoke codex_start(prompt, cwd, mode):
+   - Read-only analysis: mode="read-only"
+   - Edit files / local tests / local commit: mode="workspace-write"
+   - Outbound network needed (e.g. git push, installing remote packages): mode="danger-full-access"
+2) Loop: invoke codex_poll(task_id, wait_secs≈25):
+   - status=model_request: Follow the REPLY PROTOCOL in the returned text, answer via codex_reply(task_id, turn_id, reply);
+     To execute actions, emit an exec JS item (e.g. await tools.exec_command({cmd:"ls"})); when finished, emit a message item;
+   - status=waiting: Poll again after a short delay;
+   - status=finished/failed/cancelled: Stop the loop and present the final output to the user.
+Keep tasks concise and emit ~2 tool calls per step; modifying files requires mode=workspace-write or danger-full-access.
+```
 
-#### 为什么默认无法执行 `git push`？
-Codex CLI 在 macOS 上通过 Apple Seatbelt 沙箱进行进程级别隔离。在默认的 `workspace-write` 模式下：
-- **允许写入**：当前工作区目录（`cwd`）及其文件，包括本地 `.git/` 版本库（因此 `git add` 和 `git commit` 本地操作是允许的）。
-- **禁止网络（Network Disabled）**：系统底层拦截一切出站网络 Socket 连接。因此任何联网操作（如 `git push`、`git fetch`、`curl`、`npm install`）都会被内核拒绝（报错如 `Could not resolve host: github.com` 或 `Operation not permitted`）。
+---
 
-#### 两种推荐操作方案
+## Sandbox Policies & Code Submission (`git push`)
 
-1. **方案一（安全最佳实践·推荐）：本地 Commit + 宿主终端 Push**
-   - 让 ChatGPT 在 `workspace-write` 沙箱内安全地修改文件、运行测试，并执行本地提交：
+If modifying code works but pushing code (`git push`) fails inside ChatGPT conversations, here is why and how to resolve it:
+
+### Why does `git push` fail by default?
+On macOS, Codex CLI uses Apple Seatbelt sandboxing. Under the default `workspace-write` mode:
+- **Write access allowed**: Current workspace directory (`cwd`) and `.git/` repository (local `git add` and `git commit` work as expected).
+- **Network blocked (Network Disabled)**: The OS kernel denies outbound network sockets. Any network operation (`git push`, `git fetch`, `curl`, `npm install`) fails with errors like `Could not resolve host: github.com` or `Operation not permitted`.
+
+### Two Recommended Approaches
+
+1. **Option 1 (Security Best Practice·Recommended): Local Commit + Host Terminal Push**
+   - Let ChatGPT safely edit files, run tests, and commit locally in the `workspace-write` sandbox:
      ```javascript
      const r = await tools.exec_command({
        cmd: 'git add . && git commit -m "feat: your commit message"'
      });
      text(JSON.stringify(r));
      ```
-   - 本地提交完成后，由开发者在宿主终端核对提交并执行 `git push`。这种方式避免了向 AI 开放外网权限，最为安全可控。
+   - After the task completes, review the commit and push from your host terminal (`git push`). This keeps AI execution strictly isolated from outer networks.
 
-2. **方案二（全自动流水线）：使用 `danger-full-access` 模式直接 Push**
-   - 如果确定需要让 ChatGPT 自动将代码推送到远程仓库（GitHub/GitLab），在启动任务时显式指定：
-     `codex_start(..., mode="danger-full-access")`
-   - 在该模式下，Codex 拥有完整的外部网络与磁盘权限，可以直接执行 `git push`。
-   - **注意前提**：
-     - 本机已配置免密 Git 认证（如 SSH Agent 免密密钥、或 GitHub CLI `gh auth setup-git` 凭据助手）。非交互式子进程无法等待手动输入密码。
-     - 本机 Git 已配置好身份标识：`git config --global user.name "Your Name"` 和 `git config --global user.email "you@example.com"`（若未配置，即使本地 commit 也会被 Git 自身拒绝）。
+2. **Option 2 (Fully Automated Pipeline): Use `danger-full-access`**
+   - Set the Security Lock in the Web Dashboard to `danger-full-access` (the server will automatically elevate tasks to full network access, or specify `mode="danger-full-access"` in `codex_start`).
+   - In this mode, Codex has full network and disk permissions and can run `git push` directly.
+   - **Prerequisites**:
+     - Host machine must have non-interactive Git credentials configured (e.g., SSH Agent or GitHub CLI `gh auth setup-git`).
+     - Git identity configured: `git config --global user.name "Your Name"` and `git config --global user.email "you@example.com"`.
 
-### 排障速查
+---
 
-| 症状 | 处理 |
+## Troubleshooting
+
+| Symptom | Resolution |
 |---|---|
-| `Tunnel-client has not been seen for 300 seconds` | 连接器隧道 ≠ profile `tunnel_id`；用 `admin tunnels get` 核对后改 profile 并重启隧道 |
-| 工具清单出现 `echo/server_info/uppercase`，或缺新工具 | ChatGPT 对连接器工具清单做快照：**删除并重建连接器**，再**新开对话** |
-| 调工具报 `-32602 Tool not found` | 同上（它在调缓存里的旧工具名） |
-| 健康检查 | `tunnel-client health --url http://127.0.0.1:8080` → Healthz/Readyz PASS |
-| 确认指令到达本机 | 隧道日志出现 `dispatcher forwarded command ...`；服务日志出现 `[bridge] task ...` |
-| 端口冲突 | 设 `BRIDGE_PORT`（默认 8791）后重启隧道 |
-| `git push` 报网络不可达 / `Could not resolve host` | 属于正常沙箱防护；改用本地 commit + 宿主 push，或在 `codex_start` 中传入 `mode="danger-full-access"` |
+| `Tunnel-client has not been seen for 300 seconds` | Connector tunnel ID does not match profile or `.env` `CONTROL_PLANE_TUNNEL_ID`; verify with `admin tunnels get` and restart tunnel |
+| Tool list shows legacy `echo/server_info` or missing tools | ChatGPT caches connector schemas: **Delete and recreate the connector**, then **open a new conversation** |
+| Tool invocation error `-32602 Tool not found` | Same as above (ChatGPT is invoking cached stale tool definitions) |
+| Health check | Run `tunnel-client health --url http://127.0.0.1:8080` → Verify Healthz/Readyz is PASS |
+| Confirming instructions reached machine | Tunnel terminal displays `dispatcher forwarded command ...`; server terminal displays `[bridge] task ...` |
+| Port conflict | Set environment variable `BRIDGE_PORT` (e.g. 8792) and restart tunnel |
+| `git push` error `Could not resolve host` | Expected Seatbelt sandbox defense; use local commit + host push, or switch to `danger-full-access` in Web Dashboard |
 
-服务日志关键点：`[bridge] task ... spawned codex`（任务启动）→ `model request #N received`（codex 请求模型）
-→ `turn ... answered -> message(...)`（ChatGPT 作答已回填）→ `codex closed (code=0) -> finished`（任务完成）。
+**Server Log Landmarks**: `[bridge] task ... spawned codex` (started) $\to$ `model request #N received` (Codex requesting model) $\to$ `turn ... answered -> message(...)` (ChatGPT reply delivered) $\to$ `codex closed (code=0) -> finished` (task completed).
 
-**实时观察**：在 VS Code 的 `tunnel-client` 终端里可以实时看到每一步日志；插件会把 codex 的输出流
-（`codex stdout/stderr:` 行）和每次工具执行的输出（`tool output N (...)`）实时打到该终端（均做了截断）。
+**Live Observability**: Live execution streams and tool outputs (`codex stdout/stderr` lines) are mirrored in the tunnel terminal and in the Web Dashboard's "📋 Tasks" tab.
 
-## 后续优化与路线图（Roadmap）
+---
 
-为了未来开源发布和更广泛的社区使用，本项目计划推进以下演进方向：
+## Roadmap & Future Work
 
-- [ ] **受控网络白名单**：探索在保持沙箱隔离的前提下，通过代理或规则仅放行代码仓库域名（如 `github.com`）的出站访问，无需切换至全量 `danger-full-access`。
-- [ ] **多轮执行自愈与错误恢复**：优化 `renderTurn` 中的提示工程，当 ChatGPT 编写的 JS 出现语法错误或工具超时时，注入更具针对性的诊断与重试指引。
-- [ ] **并发任务隔离与生命周期管理**：增强多任务同时运行时的端口复用、隔离工作空间和资源配额（内存/CPU/执行时长）。
-- [ ] **实时进度上报（MCP Progress Notifications）**：利用标准 MCP `notifications/progress` 机制，将 Codex 正在执行的实时子命令状态和日志推送到 ChatGPT 界面。
-- [ ] **自动化测试与 CI/CD**：构建模拟 Responses API SSE 流的单元测试套件，接入 GitHub Actions 自动化验证。
+Planned improvements for open-source releases:
 
-## Health check
+- [ ] **Controlled Network Allowlist**: Allow outbound traffic to select domains (e.g. `github.com`) while preserving sandbox boundaries, avoiding full `danger-full-access`.
+- [ ] **Multi-turn Error Self-Healing**: Enhanced prompt diagnostics in `renderTurn` when model JS emits syntax errors or commands timeout.
+- [ ] **Task Concurrency & Quotas**: Independent workspace isolation, memory/CPU quotas, and port multiplexing across concurrent sessions.
+- [ ] **Real-time MCP Progress Notifications**: Stream sub-command progress and live logs back to the ChatGPT UI using standard MCP `notifications/progress`.
+- [ ] **Automated CI/CD Test Suite**: Mocked Responses API SSE integration tests running in GitHub Actions.
 
-The MCP server itself uses stdio. The embedded model bridge (quota-free codex flow) exposes a local-only debug endpoint at `http://127.0.0.1:<BRIDGE_PORT>/healthz`; the tunnel-client admin surface is at `http://127.0.0.1:8080` (`tunnel-client health --url http://127.0.0.1:8080`). Validate the MCP side through the Secure MCP Tunnel and an actual MCP tool call.
+---
+
+## Health Check
+
+The MCP server itself communicates over stdio. The embedded model bridge exposes a local debug endpoint at `http://127.0.0.1:<BRIDGE_PORT>/healthz`; the `tunnel-client` admin surface is at `http://127.0.0.1:8080` (`tunnel-client health --url http://127.0.0.1:8080`). Validate end-to-end connectivity through the Secure MCP Tunnel and an actual MCP tool call.
