@@ -89,21 +89,69 @@ async function main() {
   assert.ok(sseEvents.some((e) => e.event === "turn"), "Should have received 'turn' SSE event");
   console.log("✓ SSE turn event received successfully");
 
-  // 3. Test Abandoned Idle Timeout:
-  // We do NOT reply to this turn. After ~2s, bridge should reap the task as 'abandoned'.
-  console.log("Waiting for idle timeout (2s)...");
+  // 3. Test Abandoned Idle Timeout on Turn 1 (never answered -> abandoned)
+  console.log("Waiting for idle timeout on Turn 1 (2s)...");
   await new Promise((r) => setTimeout(r, 2600));
 
   const detail = bridge.getTaskDetail(taskId);
   assert.strictEqual(detail?.status, "abandoned", `Expected status to be 'abandoned', got ${detail?.status}`);
-  console.log("✓ Task status is 'abandoned' after idle timeout!");
-
+  console.log("✓ Case 1: Task status is 'abandoned' when turn 1 was never answered!");
   assert.ok(sseEvents.some((e) => e.event === "end" && e.data.status === "abandoned"), "SSE should have received end with abandoned");
-  console.log("✓ SSE end event with status 'abandoned' received successfully");
-
   req.destroy();
+
+  // 4. Test Auto-Finalization: Turn 1 was answered, Turn 2 goes idle -> should auto-finish
+  const task2Info = bridge.createTask({
+    prompt: "10",
+    cwd: process.cwd(),
+    mode: "workspace-write",
+    timeoutSecs: 30,
+  });
+  const task2Id = task2Info.taskId;
+
+  // Turn 1 arrives
+  const turn1Req = http.request(
+    `http://127.0.0.1:9876/t/${task2Id}/v1/responses/`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${bridge.apiKey}` },
+    },
+    (turnRes) => { turnRes.on("data", () => {}); }
+  );
+  turn1Req.write(JSON.stringify({ model: "test-model", stream: true }));
+  turn1Req.end();
+  await new Promise((r) => setTimeout(r, 200));
+
+  // Client polls and answers Turn 1
+  const poll1 = await bridge.poll(task2Id, 1);
+  assert.strictEqual(poll1.kind, "model_request");
+  if (poll1.kind === "model_request") {
+    bridge.reply(task2Id, poll1.turnId, 'await tools.exec_command({cmd:"echo test"})');
+  }
+  console.log("✓ Turn 1 answered successfully by client");
+
+  // Turn 2 arrives
+  const turn2Req = http.request(
+    `http://127.0.0.1:9876/t/${task2Id}/v1/responses/`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${bridge.apiKey}` },
+    },
+    (turnRes) => { turnRes.on("data", () => {}); }
+  );
+  turn2Req.write(JSON.stringify({ model: "test-model", stream: true }));
+  turn2Req.end();
+  await new Promise((r) => setTimeout(r, 200));
+
+  // Client does NOT answer Turn 2. Idle timeout should trigger auto-finalize!
+  console.log("Waiting for auto-finalize on Turn 2 (2s)...");
+  await new Promise((r) => setTimeout(r, 2600));
+
+  const detail2 = bridge.getTaskDetail(task2Id);
+  assert.strictEqual(detail2?.status, "finished", `Expected task2 status to be 'finished' via auto-finalize, got ${detail2?.status}`);
+  console.log("✓ Case 2: Task status is 'finished' via auto-finalize when previous turns were answered!");
+
   await bridge.stop();
-  console.log("\nALL IDLE TIMEOUT & SSE STREAM TESTS PASSED!");
+  console.log("\nALL IDLE TIMEOUT & AUTO-FINALIZE TESTS PASSED!");
 }
 
 main().catch((err) => {

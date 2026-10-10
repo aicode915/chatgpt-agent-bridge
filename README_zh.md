@@ -79,8 +79,9 @@ ChatGPT 对话
 
 在实际对话中，如果 ChatGPT 已经回答了用户的问题，或者用户关闭了会话，ChatGPT 可能会停止继续轮询并放弃作答待决的轮次请求（Pending Turn）。为防止本地 Codex 子进程无休止挂起占用 CPU/内存：
 - **空闲超时检测**：当 Codex 发起轮次请求后，若客户端超过 60 秒（可通过环境变量 `TURN_IDLE_TIMEOUT_SECS` 自定义）未轮询或未提交 `codex_reply`，Bridge 将自动触发空闲超时机制。
-- **孤儿任务回收**：自动向挂起的 Codex 进程发送终止信号（`SIGTERM` $\to$ `SIGKILL`），并将任务状态优雅标记为 `abandoned`（超时废弃）。
-- **实时事件推送**：控制台与 SSE 流会实时收到 `end` 事件并立即更新状态徽标，释放系统资源，免去开发者手动查找并杀进程的烦恼。
+- **智能优雅收尾 (Auto-Finalize)**：若该任务此前已有成功的交互轮次（说明 ChatGPT 已经执行了工具并达成目标，只是未在聊天最后发送结束消息），Bridge 会自动回填一条完成消息，使 Codex 正常输出并以 exit code 0 退出（状态流转为 `finished`），避免显示为误报的废弃状态。
+- **孤儿任务回收**：若为首轮请求且客户端从未作答（例如客户端异常崩溃或直接丢弃），则发送终止信号（`SIGTERM` $\to$ `SIGKILL`）并将任务标记为 `abandoned`，防止悬挂子进程占用系统资源。
+- **实时事件推送**：控制台与 SSE 流会实时收到状态变更事件并立即更新状态徽标，释放系统资源。
 
 ---
 
@@ -107,7 +108,7 @@ ChatGPT 对话
      --sample sample_mcp_stdio_local \
      --profile chatgpt-agent-bridge \
      --tunnel-id tunnel_YOUR_ID \
-     --mcp-command "env WORKSPACE_ROOT=/Users/liukun/ai_dev/chatgpt-agent-bridge /opt/homebrew/bin/node /Users/liukun/ai_dev/chatgpt-agent-bridge/dist/server.js"
+     --mcp-command "env WORKSPACE_ROOT=/path/to/your/project node /path/to/chatgpt-agent-bridge/dist/server.js"
    ```
 3. **ChatGPT 连接器**：ChatGPT 设置 → 连接器 → 新建自定义连接器 → 连接方式选 **Tunnel** → 选择对应的隧道。
 
@@ -115,7 +116,7 @@ ChatGPT 对话
 
 启动隧道（一键脚本：自动读取 `.env` 并启动，前台运行，Ctrl+C 停止）：
 ```bash
-cd ~/ai_dev/chatgpt-agent-bridge
+cd /path/to/chatgpt-agent-bridge
 ./scripts/start-tunnel.sh            # 启动；若已在运行则仅提示（不打扰进行中的任务）
 ./scripts/start-tunnel.sh --restart  # 重启隧道（注意：会中断进行中的任务）
 ```
@@ -137,7 +138,8 @@ npm run test:local
    - 需连外网（如 git push、安装远程包）：mode="danger-full-access"
 2) 循环：调用 codex_poll(task_id, wait_secs≈25)：
    - status=model_request：按返回文本里的 REPLY PROTOCOL，用 codex_reply(task_id, turn_id, reply) 作答；
-     要执行动作就发 exec 的 JS（如 await tools.exec_command({cmd:"ls"})），目标完成就发最终 message；
+     要执行动作就发 exec 的 JS（如 await tools.exec_command({cmd:"ls"})）；
+     【关键收尾】：目标达成后切勿直接在聊天中停止！必须最后调用一次 codex_reply(task_id, turn_id, 'message("任务完成总结")')，使 Codex 正常结束（status=finished）；
    - status=waiting：稍后再次 poll；
    - status=finished/failed/cancelled：停止循环，把最终输出整理给用户。
 每步约 2 次工具调用，任务尽量切小；涉及写文件必须指定 mode=workspace-write 或 danger-full-access。

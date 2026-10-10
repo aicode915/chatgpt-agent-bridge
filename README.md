@@ -79,8 +79,9 @@ Features:
 
 In conversational AI workflows, ChatGPT may finish answering the user's objective or the user may close the chat window, leaving a pending model request (Pending Turn) unanswered without further polling or replies:
 - **Idle Timeout Detection**: When a turn request is pending from Codex, if the client goes idle for >60s (customizable via `TURN_IDLE_TIMEOUT_SECS`) without polling or calling `codex_reply`, the bridge triggers automatic idle reaping.
-- **Orphan Task Cleanup**: The hanging Codex subprocess is gracefully terminated (`SIGTERM` $\to$ `SIGKILL`), and the task status transitions immediately to `abandoned`.
-- **Live Event Broadcast**: The dashboard and SSE subscribers instantly receive the `end` event with the `abandoned` status, preventing lingering orphan processes and freeing local resources.
+- **Graceful Auto-Finalization**: If the task has already completed previous interaction turns (indicating tools ran and objectives were met), Bridge automatically fulfills the pending turn with a completion message, allowing Codex to exit cleanly with code 0 and status `finished`, rather than showing a false-positive abandoned state.
+- **Orphan Task Cleanup**: If the client went idle on the very first turn without ever replying, the hanging subprocess is terminated (`SIGTERM` $\to$ `SIGKILL`), transitioning the task status to `abandoned`.
+- **Live Event Broadcast**: The dashboard and SSE subscribers instantly receive event notifications with updated statuses, freeing local resources without manual process management.
 
 ---
 
@@ -106,7 +107,7 @@ In conversational AI workflows, ChatGPT may finish answering the user's objectiv
      --sample sample_mcp_stdio_local \
      --profile chatgpt-agent-bridge \
      --tunnel-id tunnel_YOUR_ID \
-     --mcp-command "env WORKSPACE_ROOT=/Users/liukun/ai_dev/chatgpt-agent-bridge /opt/homebrew/bin/node /Users/liukun/ai_dev/chatgpt-agent-bridge/dist/server.js"
+     --mcp-command "env WORKSPACE_ROOT=/path/to/your/project node /path/to/chatgpt-agent-bridge/dist/server.js"
    ```
 3. **ChatGPT Connector**: In ChatGPT: Settings → Connectors → New Custom Connector → Connection Method: **Tunnel** → Select your tunnel.
 
@@ -114,7 +115,7 @@ In conversational AI workflows, ChatGPT may finish answering the user's objectiv
 
 Start the tunnel (one-click script automatically reading `.env`, runs in foreground, Ctrl+C to stop):
 ```bash
-cd ~/ai_dev/chatgpt-agent-bridge
+cd /path/to/chatgpt-agent-bridge
 ./scripts/start-tunnel.sh            # Start; prompts if already running
 ./scripts/start-tunnel.sh --restart  # Restart tunnel (interrupts ongoing tasks)
 ```
@@ -136,7 +137,8 @@ You are the virtual "model" driving the local Codex CLI. Workflow:
    - Outbound network needed (e.g. git push, installing remote packages): mode="danger-full-access"
 2) Loop: invoke codex_poll(task_id, wait_secs≈25):
    - status=model_request: Follow the REPLY PROTOCOL in the returned text, answer via codex_reply(task_id, turn_id, reply);
-     To execute actions, emit an exec JS item (e.g. await tools.exec_command({cmd:"ls"})); when finished, emit a message item;
+     To execute actions, emit an exec JS item (e.g. await tools.exec_command({cmd:"ls"}));
+     [CRITICAL CLOSING RULE]: When the goal is completed, NEVER stop without replying! Always call codex_reply(task_id, turn_id, 'message("Task completed summary")') so Codex exits cleanly (status=finished);
    - status=waiting: Poll again after a short delay;
    - status=finished/failed/cancelled: Stop the loop and present the final output to the user.
 Keep tasks concise and emit ~2 tool calls per step; modifying files requires mode=workspace-write or danger-full-access.
@@ -207,5 +209,3 @@ Planned improvements for open-source releases:
 ## Health Check
 
 The MCP server itself communicates over stdio. The embedded model bridge exposes a local debug endpoint at `http://127.0.0.1:<BRIDGE_PORT>/healthz`; the `tunnel-client` admin surface is at `http://127.0.0.1:8080` (`tunnel-client health --url http://127.0.0.1:8080`). Validate end-to-end connectivity through the Secure MCP Tunnel and an actual MCP tool call.
-<!-- push test: 2026-10-10 -->
-<!-- push test: 2026-10-10 -->

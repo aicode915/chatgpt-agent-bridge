@@ -947,7 +947,8 @@ export function renderDashboardHtml(): string {
    \${modeHint}
 2) 循环：调用 codex_poll(task_id, wait_secs≈25)：
    - status=model_request：按返回文本里的 REPLY PROTOCOL，用 codex_reply(task_id, turn_id, reply) 作答；
-     要执行动作就发 exec 的 JS（如 await tools.exec_command({cmd:"ls"})），目标完成就发最终 message；
+     要执行动作就发 exec 的 JS（如 await tools.exec_command({cmd:"ls"})）；
+     【关键收尾】：目标达成后切勿直接在聊天中停止！必须最后调用一次 codex_reply(task_id, turn_id, 'message("任务完成总结")')，使 Codex 正常结束（status=finished）；
    - status=waiting：稍后再次 poll；
    - status=finished/failed/cancelled：停止循环，把最终输出整理给用户。
 每步约 2 次工具调用，任务尽量切小；涉及写文件必须指定 mode=workspace-write 或 danger-full-access。\`;

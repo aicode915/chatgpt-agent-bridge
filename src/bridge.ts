@@ -831,7 +831,47 @@ export class ModelBridge {
     task.idleTimer = setTimeout(() => {
       if (task.status !== "running") return;
       if (task.pending && task.pending.id === turn.id && !task.pending.answered) {
-        log(`task ${task.id}: idle timeout reached (${ms / 1000}s) on turn ${turn.id}; reaping abandoned task`);
+        log(`task ${task.id}: idle timeout reached (${ms / 1000}s) on turn ${turn.id}`);
+        // 检查之前是否已经有作答过的轮次（说明 ChatGPT 已经驱动执行了工具，目标可能已达成）
+        const hasAnsweredTurns = task.turnHistory.some((h) => h.id !== turn.id && Boolean(h.answeredAt));
+        if (hasAnsweredTurns) {
+          log(`task ${task.id}: auto-finalizing turn ${turn.id} with completion message (client finished polling)`);
+          try {
+            const autoReplyText = 'message("Task completed (auto-finalized by bridge idle timeout).")';
+            const items = parseReply(autoReplyText);
+            this.completeTurn(turn, task, items);
+            task.pending = undefined;
+            const historyItem = task.turnHistory.find((h) => h.id === turn.id);
+            if (historyItem) {
+              historyItem.answeredAt = Date.now();
+              historyItem.replyLabels = ["auto_finalize:message"];
+            }
+            broadcastTaskEvent(task, "turn_answered", {
+              seq: turn.seq,
+              id: turn.id,
+              replyLabels: ["auto_finalize:message"],
+              answeredAt: Date.now(),
+            });
+            task.status = "finished";
+            broadcastTaskEvent(task, "end", {
+              status: "finished",
+              exitCode: 0,
+              finishedAt: Date.now(),
+            });
+            // 优雅通知子进程终止（若其在收到响应后未立刻退出）
+            const graceTimer = setTimeout(() => {
+              try {
+                task.child.kill("SIGTERM");
+              } catch {
+                /* ignore */
+              }
+            }, 1000);
+            graceTimer.unref?.();
+            return;
+          } catch (err) {
+            log(`task ${task.id}: auto-finalize failed: ${(err as Error).message}`);
+          }
+        }
         this.killTask(task, "abandoned");
       }
     }, ms);
