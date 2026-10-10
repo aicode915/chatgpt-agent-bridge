@@ -3,30 +3,32 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { ModelBridge } from "./bridge.js";
+import { ConfigManager } from "./config.js";
 
 const ROOT = path.resolve(process.env.WORKSPACE_ROOT ?? process.cwd());
+const configManager = new ConfigManager(ROOT);
 
 // 本地"虚拟模型"端点：codex 的模型请求会打到这里，由 ChatGPT 对话作答。
-const bridge = new ModelBridge();
+const bridge = new ModelBridge({ configManager });
 let bridgeError: string | null = null;
 try {
   await bridge.start();
   console.error(`[server] model bridge ready on 127.0.0.1:${bridge.port}`);
+  console.error(`[server] Web Dashboard available at http://127.0.0.1:${bridge.port}`);
 } catch (error) {
   bridgeError = (error as Error).message;
   console.error(`[server] model bridge failed to start: ${bridgeError}`);
 }
 
-function safePath(input: string): string {
-  const resolved = path.resolve(ROOT, input);
-  if (resolved !== ROOT && !resolved.startsWith(ROOT + path.sep)) {
-    throw new Error("Path escapes WORKSPACE_ROOT");
+function safeCwd(input?: string): string {
+  const base = configManager.get().activeWorkspace;
+  const resolved = input ? path.resolve(base, input) : base;
+  if (!configManager.isPathAllowed(resolved)) {
+    throw new Error(
+      `Path '${resolved}' is outside allowed workspaces. Add it via the Web Dashboard (http://127.0.0.1:${bridge.port}) first.`
+    );
   }
   return resolved;
-}
-
-function safeCwd(input?: string): string {
-  return safePath(input ?? ".");
 }
 
 const server = new McpServer({
@@ -40,10 +42,10 @@ server.tool(
   {
     prompt: z.string().min(1).max(20000),
     cwd: z.string().default("."),
-    mode: z.enum(["read-only", "workspace-write"]).default("read-only"),
+    mode: z.enum(["read-only", "workspace-write", "danger-full-access"]).optional(),
     timeout_secs: z.number().int().min(60).max(86400).default(1800),
   },
-  async ({ prompt, cwd: inputCwd, mode, timeout_secs }) => {
+  async ({ prompt, cwd: inputCwd, mode: inputMode, timeout_secs }) => {
     if (bridgeError) {
       return {
         content: [{ type: "text", text: `Model bridge unavailable: ${bridgeError}. Free the port (env BRIDGE_PORT, default 8791) and restart the MCP server.` }],
@@ -51,14 +53,33 @@ server.tool(
       };
     }
     try {
+      const cfg = configManager.get();
+      // 动态确定实际生效模式：
+      // 1. 若 ChatGPT 未指定 mode，默认采用 Web 控制台当前保存的生效模式（避免默认强制降为 read-only）
+      // 2. 若 Web 控制台已选定 danger-full-access，而 ChatGPT 传入的是旧惯性 workspace-write，自动升级为 danger-full-access
+      let effectiveMode = inputMode ?? cfg.maxAllowedMode;
+      if (cfg.maxAllowedMode === "danger-full-access" && inputMode === "workspace-write") {
+        effectiveMode = "danger-full-access";
+      }
+
+      const modeCheck = configManager.validateMode(effectiveMode);
+      if (!modeCheck.allowed) {
+        return {
+          content: [{
+            type: "text",
+            text: `[Security Lock Blocked] ${modeCheck.reason}\nYou can adjust the Security Lock policy on the Web Dashboard: http://127.0.0.1:${bridge.port}`,
+          }],
+          isError: true,
+        };
+      }
       const cwd = safeCwd(inputCwd);
-      const info = bridge.createTask({ prompt, cwd, mode, timeoutSecs: timeout_secs });
+      const info = bridge.createTask({ prompt, cwd, mode: effectiveMode, timeoutSecs: timeout_secs });
       return {
         content: [{
           type: "text",
           text: [
             `task_id: ${info.taskId}`,
-            `mode: ${mode} | cwd: ${path.relative(ROOT, cwd) || "."} | timeout: ${timeout_secs}s`,
+            `mode: ${effectiveMode} | cwd: ${cwd} | timeout: ${timeout_secs}s`,
             "",
             `Next: call codex_poll(task_id="${info.taskId}") to receive codex's first model request.`,
             "Then answer it with codex_reply(task_id, turn_id, reply). Repeat poll/reply until the poll status is finished/failed/cancelled.",

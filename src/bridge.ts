@@ -16,12 +16,24 @@
  * 注意：stdio MCP 服务器禁止写 stdout，本文件所有日志一律走 stderr。
  */
 
+import fs from "node:fs";
+import path from "node:path";
 import crypto from "node:crypto";
 import http from "node:http";
 import { spawn, type ChildProcess } from "node:child_process";
+import { ConfigManager } from "./config.js";
+import { renderDashboardHtml } from "./dashboard.js";
 
-export type TaskMode = "read-only" | "workspace-write";
+export type TaskMode = "read-only" | "workspace-write" | "danger-full-access";
 export type TaskStatus = "running" | "finished" | "failed" | "cancelled";
+
+export interface TurnHistoryItem {
+  seq: number;
+  id: string;
+  createdAt: number;
+  answeredAt?: number;
+  replyLabels?: string[];
+}
 
 export interface StartTaskOptions {
   prompt: string;
@@ -84,6 +96,7 @@ interface BridgeTask {
   killReason?: "user" | "timeout" | "stop";
   pending?: PendingTurn;
   turns: number;
+  turnHistory: TurnHistoryItem[];
   loggedOutputs: number;
   timeoutTimer: NodeJS.Timeout;
 }
@@ -486,11 +499,20 @@ function summarizeEnd(task: BridgeTask): PollResult {
 /* 主体：HTTP 虚拟端点 + 任务管理                                        */
 /* ------------------------------------------------------------------ */
 
+export interface ModelBridgeOptions {
+  configManager?: ConfigManager;
+}
+
 export class ModelBridge {
   readonly apiKey = crypto.randomBytes(24).toString("hex");
   port = Number(process.env.BRIDGE_PORT ?? DEFAULT_PORT);
+  readonly configManager: ConfigManager;
   private tasks = new Map<string, BridgeTask>();
   private server: http.Server | null = null;
+
+  constructor(options?: ModelBridgeOptions) {
+    this.configManager = options?.configManager ?? new ConfigManager();
+  }
 
   get started(): boolean {
     return this.server !== null && this.server.listening;
@@ -532,6 +554,10 @@ export class ModelBridge {
 
   createTask(options: StartTaskOptions): StartTaskInfo {
     if (!this.started) throw new Error("model bridge HTTP server is not running (set BRIDGE_PORT to a free port)");
+    const modeCheck = this.configManager.validateMode(options.mode);
+    if (!modeCheck.allowed) {
+      throw new Error(`Security Policy Blocked: ${modeCheck.reason}`);
+    }
     const id = newId("t");
     const baseUrl = this.baseUrlFor(id);
     const args = [
@@ -577,6 +603,7 @@ export class ModelBridge {
       exitCode: null,
       signal: null,
       turns: 0,
+      turnHistory: [],
       loggedOutputs: 0,
       timeoutTimer: setTimeout(() => this.killTask(task, "timeout"), options.timeoutSecs * 1000),
     };
@@ -662,6 +689,11 @@ export class ModelBridge {
     this.completeTurn(pending, task, items);
     task.pending = undefined;
     const ack: ReplyAck = { turnId, emitted: items.map((entry) => entry.label) };
+    const historyItem = task.turnHistory.find((h) => h.id === turnId);
+    if (historyItem) {
+      historyItem.answeredAt = Date.now();
+      historyItem.replyLabels = ack.emitted;
+    }
     log(`task ${taskId}: turn ${turnId} answered -> ${ack.emitted.join(", ")}`);
     return ack;
   }
@@ -689,14 +721,159 @@ export class ModelBridge {
     }));
   }
 
+  getTaskDetail(taskId: string): Record<string, unknown> | null {
+    const task = this.tasks.get(taskId);
+    if (!task) return null;
+    return {
+      id: task.id,
+      status: task.status,
+      mode: task.mode,
+      cwd: task.cwd,
+      prompt: task.prompt,
+      timeoutSecs: task.timeoutSecs,
+      createdAt: task.createdAt,
+      finishedAt: task.finishedAt,
+      exitCode: task.exitCode,
+      signal: task.signal,
+      error: task.error,
+      turns: task.turns,
+      stdoutTail: tail(task.stdout.trim(), 10000),
+      stderrTail: tail(task.stderr.trim(), 4000),
+      turnHistory: task.turnHistory,
+    };
+  }
+
+  checkTunnelHealth(): Promise<boolean> {
+    return new Promise((resolve) => {
+      const clientReq = http.get("http://127.0.0.1:8080/healthz", { timeout: 1500 }, (res) => {
+        resolve(res.statusCode === 200);
+      });
+      clientReq.on("error", () => resolve(false));
+      clientReq.on("timeout", () => {
+        clientReq.destroy();
+        resolve(false);
+      });
+    });
+  }
+
+  restartTunnel(): Promise<string> {
+    return new Promise((resolve) => {
+      const scriptPath = path.resolve(process.cwd(), "scripts/start-tunnel.sh");
+      if (!fs.existsSync(scriptPath)) {
+        resolve("start-tunnel.sh script not found");
+        return;
+      }
+      const child = spawn("bash", [scriptPath, "--restart"], {
+        detached: true,
+        stdio: "ignore",
+      });
+      child.unref();
+      resolve("Tunnel restart triggered in background");
+    });
+  }
+
   /* ---------------------------- internals ---------------------------- */
 
   private async handleHttp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
     try {
       const url = req.url ?? "/";
+      if (req.method === "GET" && (url === "/" || url === "/index.html")) {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+        res.end(renderDashboardHtml());
+        return;
+      }
       if (req.method === "GET" && url === "/healthz") {
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ ok: this.started, tasks: this.tasks.size }));
+        return;
+      }
+      if (req.method === "GET" && url === "/api/status") {
+        const tunnelHealthy = await this.checkTunnelHealth();
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          bridge: { port: this.port, started: this.started },
+          config: {
+            ...this.configManager.get(),
+            configPath: this.configManager.configPath,
+          },
+          system: { nodeVersion: process.version, platform: process.platform },
+          tunnel: { healthy: tunnelHealthy },
+        }));
+        return;
+      }
+      if (req.method === "GET" && url === "/api/tasks") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(this.list()));
+        return;
+      }
+      const taskDetailMatch = url.match(/^\/api\/tasks\/([A-Za-z0-9_]+)$/);
+      if (req.method === "GET" && taskDetailMatch) {
+        const detail = this.getTaskDetail(taskDetailMatch[1]);
+        if (!detail) {
+          res.writeHead(404, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "task not found" }));
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify(detail));
+        return;
+      }
+      const taskCancelMatch = url.match(/^\/api\/tasks\/([A-Za-z0-9_]+)\/cancel$/);
+      if (req.method === "POST" && taskCancelMatch) {
+        const msg = this.cancel(taskCancelMatch[1]);
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ message: msg }));
+        return;
+      }
+      if (req.method === "POST" && url === "/api/config/security") {
+        const raw = await readBody(req);
+        try {
+          const body = JSON.parse(raw.toString("utf8"));
+          this.configManager.setMaxAllowedMode(body.maxAllowedMode);
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ success: true, mode: body.maxAllowedMode }));
+        } catch (err) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: (err as Error).message }));
+        }
+        return;
+      }
+      if (req.method === "POST" && url === "/api/config/workspaces") {
+        const raw = await readBody(req);
+        try {
+          const body = JSON.parse(raw.toString("utf8"));
+          if (body.action === "add") {
+            const added = this.configManager.addWorkspace(body.path);
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ success: true, added }));
+          } else if (body.action === "remove") {
+            this.configManager.removeWorkspace(body.path);
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ success: true }));
+          } else if (body.action === "select") {
+            const selected = this.configManager.setActiveWorkspace(body.path);
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ success: true, selected }));
+          } else {
+            res.writeHead(400, { "content-type": "application/json" });
+            res.end(JSON.stringify({ error: `unknown action: ${body.action}` }));
+          }
+        } catch (err) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: (err as Error).message }));
+        }
+        return;
+      }
+      if (req.method === "GET" && url === "/api/tunnel/health") {
+        const healthy = await this.checkTunnelHealth();
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ healthy }));
+        return;
+      }
+      if (req.method === "POST" && url === "/api/tunnel/restart") {
+        const result = await this.restartTunnel();
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ message: result }));
         return;
       }
       const match = url.match(/^\/t\/([A-Za-z0-9_]+)\/v1\/responses\/?$/);
@@ -746,6 +923,11 @@ export class ModelBridge {
       };
       task.turns = turn.seq;
       task.pending = turn;
+      task.turnHistory.push({
+        seq: turn.seq,
+        id: turn.id,
+        createdAt: turn.createdAt,
+      });
       log(`task ${taskId}: model request #${turn.seq} received (${turn.stream ? "stream" : "json"}, ${raw.length} bytes)`);
       logNewToolOutputs(task, body);
 

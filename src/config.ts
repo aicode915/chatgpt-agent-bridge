@@ -1,0 +1,132 @@
+import fs from "node:fs";
+import path from "node:path";
+import { type TaskMode } from "./bridge.js";
+
+export interface BridgeConfigData {
+  maxAllowedMode: TaskMode;
+  allowedWorkspaces: string[];
+  activeWorkspace: string;
+}
+
+const MODE_RANKS: Record<TaskMode, number> = {
+  "read-only": 1,
+  "workspace-write": 2,
+  "danger-full-access": 3,
+};
+
+export class ConfigManager {
+  readonly configPath: string;
+  private data: BridgeConfigData;
+
+  constructor(baseDir: string = process.cwd()) {
+    const defaultRoot = path.resolve(process.env.WORKSPACE_ROOT ?? baseDir);
+    this.configPath = path.resolve(defaultRoot, "bridge-config.json");
+    this.data = {
+      maxAllowedMode: "workspace-write",
+      allowedWorkspaces: [defaultRoot],
+      activeWorkspace: defaultRoot,
+    };
+    this.load();
+  }
+
+  load(): void {
+    try {
+      if (fs.existsSync(this.configPath)) {
+        const raw = fs.readFileSync(this.configPath, "utf8");
+        const parsed = JSON.parse(raw) as Partial<BridgeConfigData>;
+        if (parsed.maxAllowedMode && ["read-only", "workspace-write", "danger-full-access"].includes(parsed.maxAllowedMode)) {
+          this.data.maxAllowedMode = parsed.maxAllowedMode;
+        }
+        if (Array.isArray(parsed.allowedWorkspaces) && parsed.allowedWorkspaces.length > 0) {
+          this.data.allowedWorkspaces = parsed.allowedWorkspaces.map((p) => path.resolve(p));
+        }
+        if (parsed.activeWorkspace && typeof parsed.activeWorkspace === "string") {
+          this.data.activeWorkspace = path.resolve(parsed.activeWorkspace);
+        }
+      }
+    } catch (err) {
+      console.error(`[config] failed to load ${this.configPath}: ${(err as Error).message}`);
+    }
+  }
+
+  save(): void {
+    try {
+      fs.writeFileSync(this.configPath, JSON.stringify(this.data, null, 2), "utf8");
+    } catch (err) {
+      console.error(`[config] failed to save ${this.configPath}: ${(err as Error).message}`);
+    }
+  }
+
+  get(): BridgeConfigData {
+    return {
+      maxAllowedMode: this.data.maxAllowedMode,
+      allowedWorkspaces: [...this.data.allowedWorkspaces],
+      activeWorkspace: this.data.activeWorkspace,
+    };
+  }
+
+  setMaxAllowedMode(mode: TaskMode): void {
+    if (!["read-only", "workspace-write", "danger-full-access"].includes(mode)) {
+      throw new Error(`Invalid mode: ${mode}`);
+    }
+    this.data.maxAllowedMode = mode;
+    this.save();
+  }
+
+  addWorkspace(targetPath: string): string {
+    const resolved = path.resolve(targetPath);
+    if (!fs.existsSync(resolved)) {
+      throw new Error(`Directory does not exist: ${resolved}`);
+    }
+    const stat = fs.statSync(resolved);
+    if (!stat.isDirectory()) {
+      throw new Error(`Path is not a directory: ${resolved}`);
+    }
+    if (!this.data.allowedWorkspaces.includes(resolved)) {
+      this.data.allowedWorkspaces.push(resolved);
+      this.save();
+    }
+    return resolved;
+  }
+
+  removeWorkspace(targetPath: string): void {
+    const resolved = path.resolve(targetPath);
+    if (this.data.allowedWorkspaces.length <= 1) {
+      throw new Error("Cannot remove the only remaining workspace");
+    }
+    this.data.allowedWorkspaces = this.data.allowedWorkspaces.filter((p) => p !== resolved);
+    if (this.data.activeWorkspace === resolved) {
+      this.data.activeWorkspace = this.data.allowedWorkspaces[0];
+    }
+    this.save();
+  }
+
+  setActiveWorkspace(targetPath: string): string {
+    const resolved = path.resolve(targetPath);
+    if (!this.data.allowedWorkspaces.includes(resolved)) {
+      this.addWorkspace(resolved);
+    }
+    this.data.activeWorkspace = resolved;
+    this.save();
+    return resolved;
+  }
+
+  isPathAllowed(targetPath: string): boolean {
+    const resolved = path.resolve(targetPath);
+    return this.data.allowedWorkspaces.some(
+      (root) => resolved === root || resolved.startsWith(root + path.sep),
+    );
+  }
+
+  validateMode(requestedMode: TaskMode): { allowed: boolean; reason?: string } {
+    const reqRank = MODE_RANKS[requestedMode] ?? 999;
+    const maxRank = MODE_RANKS[this.data.maxAllowedMode] ?? 1;
+    if (reqRank > maxRank) {
+      return {
+        allowed: false,
+        reason: `Requested mode '${requestedMode}' exceeds maximum allowed mode '${this.data.maxAllowedMode}' (Security Lock is active).`,
+      };
+    }
+    return { allowed: true };
+  }
+}
