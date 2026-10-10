@@ -215,13 +215,15 @@ Codex CLI 在 macOS 上通过 Apple Seatbelt 沙箱进行进程级别隔离。�
 
 ## 后续优化与路线图（Roadmap）
 
-为了未来开源发布和更广泛的社区使用，本项目计划推进以下演进方向：
+为了未来开源发布和更广泛的社区使用，本项目制定了详尽的产品体验优化与底层技术路线图，详细规划请参阅独立文档：👉 [**OPTIMIZATIONS.md**](./OPTIMIZATIONS.md)。
 
-- [ ] **受控网络白名单**：探索在保持沙箱隔离的前提下，通过代理或规则仅放行代码仓库域名（如 `github.com`）的出站访问，无需切换至全量 `danger-full-access`。
-- [ ] **多轮执行自愈与错误恢复**：优化 `renderTurn` 中的提示工程，当 ChatGPT 编写的 JS 出现语法错误或工具超时时，注入更具针对性的诊断与重试指引。
-- [ ] **并发任务隔离与生命周期管理**：增强多任务同时运行时的端口复用、隔离工作空间和资源配额（内存/CPU/执行时长）。
-- [ ] **实时进度上报（MCP Progress Notifications）**：利用标准 MCP `notifications/progress` 机制，将 Codex 正在执行的实时子命令状态和日志推送到 ChatGPT 界面。
-- [ ] **自动化测试与 CI/CD**：构建模拟 Responses API SSE 流的单元测试套件，接入 GitHub Actions 自动化验证。
+主要演进方向包括：
+- [ ] **免复制提示词体验**：配置 ChatGPT 专属 Custom GPT / 全局自定义指令，实现零摩擦对话即用；
+- [ ] **CLI 极简分发**：发布至 npm 支持 `npx` 启动，并增加交互式配置向导 (Setup Wizard)；
+- [ ] **Web 控制台 Git Diff 可视化**：任务执行完毕后直接在网页上高亮展示代码变更；
+- [ ] **受控网络白名单**：在保持沙箱隔离的前提下仅放行代码仓库域名，无需切换至全量 `danger-full-access`；
+- [ ] **实时进度上报**：利用 MCP `notifications/progress` 将实时子命令状态回传给 ChatGPT 界面；
+- [ ] **多轮执行自愈与并发隔离**：提升脚本容错诊断能力，支持多任务工作区资源隔离。
 
 ---
 

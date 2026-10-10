@@ -215,13 +215,15 @@ On macOS, Codex CLI uses Apple Seatbelt sandboxing. Under the default `workspace
 
 ## Roadmap & Future Work
 
-Planned improvements for open-source releases:
+For comprehensive product roadmap and UX optimization proposals, please refer to the dedicated document: 👉 [**OPTIMIZATIONS.md**](./OPTIMIZATIONS.md).
 
-- [ ] **Controlled Network Allowlist**: Allow outbound traffic to select domains (e.g. `github.com`) while preserving sandbox boundaries, avoiding full `danger-full-access`.
-- [ ] **Multi-turn Error Self-Healing**: Enhanced prompt diagnostics in `renderTurn` when model JS emits syntax errors or commands timeout.
-- [ ] **Task Concurrency & Quotas**: Independent workspace isolation, memory/CPU quotas, and port multiplexing across concurrent sessions.
-- [ ] **Real-time MCP Progress Notifications**: Stream sub-command progress and live logs back to the ChatGPT UI using standard MCP `notifications/progress`.
-- [ ] **Automated CI/CD Test Suite**: Mocked Responses API SSE integration tests running in GitHub Actions.
+Key roadmap directions:
+- [ ] **Zero-Friction Prompting**: Dedicated Custom GPT / Custom Instructions setup to eliminate prompt copy-pasting;
+- [ ] **Streamlined CLI Packaging**: Distribute via npm (`npx chatgpt-agent-bridge`) with an interactive setup wizard;
+- [ ] **Web Dashboard Diff Viewer**: Real-time visual Git Diff rendering after coding tasks finish;
+- [ ] **Controlled Network Allowlist**: Allow outbound traffic to trusted domains (e.g. `github.com`) while preserving sandbox boundaries;
+- [ ] **Real-time MCP Progress Notifications**: Stream sub-command status back to ChatGPT UI via `notifications/progress`;
+- [ ] **Multi-turn Error Self-Healing & Concurrency Isolation**: Enhanced prompt diagnostics and per-task isolated workspaces.
 
 ---
 
