@@ -63,6 +63,9 @@ export function renderDashboardHtml(): string {
     .dot-online { background-color: var(--success); box-shadow: 0 0 8px var(--success); }
     .dot-warning { background-color: var(--warning); box-shadow: 0 0 8px var(--warning); }
     .dot-danger { background-color: var(--danger); box-shadow: 0 0 8px var(--danger); }
+    .dot-muted { background-color: var(--text-muted); box-shadow: none; }
+    @keyframes pulse { 0% { opacity: 0.5; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.1); } 100% { opacity: 0.5; transform: scale(0.92); } }
+    .dot-pulse { animation: pulse 1.8s infinite ease-in-out; }
     
     .tabs {
       display: flex;
@@ -462,8 +465,23 @@ export function renderDashboardHtml(): string {
       </div>
 
       <div style="margin-bottom: 16px;">
-        <div style="font-size: 12px; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">Codex Stdout 输出 (Tail):</div>
-        <div class="terminal-view" id="modal-stdout"></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 12px; font-weight: 600; color: var(--text-muted);">Codex 执行日志 (Live Terminal):</span>
+            <span id="modal-stream-badge" class="badge" style="padding: 2px 8px; font-size: 11px;">
+              <span class="badge-dot dot-online dot-pulse" id="modal-stream-dot"></span>
+              <span id="modal-stream-text">实时连接中</span>
+            </span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <label style="font-size: 12px; color: var(--text-muted); display: inline-flex; align-items: center; gap: 4px; cursor: pointer; user-select: none;">
+              <input type="checkbox" id="modal-auto-scroll" checked> 自动滚动
+            </label>
+            <button class="btn btn-secondary btn-sm" onclick="clearModalLogs()">清屏</button>
+            <button class="btn btn-secondary btn-sm" onclick="copyModalLogs()">复制全部日志</button>
+          </div>
+        </div>
+        <div class="terminal-view" id="modal-stdout" style="max-height: 320px; font-family: Menlo, Monaco, Consolas, monospace; line-height: 1.45;"></div>
       </div>
 
       <div style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -478,12 +496,74 @@ export function renderDashboardHtml(): string {
   <script>
     let currentData = null;
     let selectedTaskId = null;
+    let currentEventSource = null;
 
     function showToast(msg) {
       const toast = document.getElementById('toast');
       toast.innerText = msg;
       toast.classList.add('show');
       setTimeout(() => toast.classList.remove('show'), 2000);
+    }
+
+    function clearModalLogs() {
+      const el = document.getElementById('modal-stdout');
+      if (el) el.innerText = '';
+    }
+
+    function copyModalLogs() {
+      const el = document.getElementById('modal-stdout');
+      if (!el || !el.innerText) return showToast('日志为空');
+      navigator.clipboard.writeText(el.innerText).then(() => {
+        showToast('全部执行日志已复制到剪贴板！');
+      }).catch(() => {
+        showToast('复制失败');
+      });
+    }
+
+    function updateModalStreamBadge(status) {
+      const dot = document.getElementById('modal-stream-dot');
+      const text = document.getElementById('modal-stream-text');
+      if (!dot || !text) return;
+      if (status === 'running') {
+        dot.className = 'badge-dot dot-online dot-pulse';
+        text.innerText = 'SSE 实时接收中';
+      } else if (status === 'finished') {
+        dot.className = 'badge-dot dot-online';
+        text.innerText = '任务已完成';
+      } else if (status === 'failed') {
+        dot.className = 'badge-dot dot-danger';
+        text.innerText = '任务异常退出';
+      } else if (status === 'abandoned') {
+        dot.className = 'badge-dot dot-warning';
+        text.innerText = '超时废弃 (Abandoned)';
+      } else if (status === 'cancelled') {
+        dot.className = 'badge-dot dot-warning';
+        text.innerText = '任务已取消';
+      } else {
+        dot.className = 'badge-dot dot-muted';
+        text.innerText = status || '已断开';
+      }
+    }
+
+    function renderTurnItems(history) {
+      const turnsBox = document.getElementById('modal-turns-container');
+      if (!history || history.length === 0) {
+        turnsBox.innerHTML = '<span style="font-size: 12px; color: var(--text-muted);">暂无轮次记录</span>';
+        return;
+      }
+      turnsBox.innerHTML = history.map(th => {
+        const isAnswered = Boolean(th.answeredAt);
+        const actionLabels = th.replyLabels ? th.replyLabels.join(', ') : (isAnswered ? '完成' : '处理中...');
+        return '<div id="turn-card-' + th.id + '" style="background: rgba(0,0,0,0.25); border: 1px solid var(--card-border); padding: 8px 12px; border-radius: 6px; font-size: 12px;">' +
+          '<div style="display: flex; justify-content: space-between; margin-bottom: 4px;">' +
+            '<strong>Turn #' + th.seq + ' (' + th.id + ')</strong>' +
+            '<span style="color: ' + (isAnswered ? 'var(--success)' : 'var(--warning)') + '; font-weight: 600;">' +
+              (isAnswered ? '已回复' : '等待回复中...') +
+            '</span>' +
+          '</div>' +
+          '<div style="color: var(--primary);">回复动作: <span id="turn-labels-' + th.id + '">' + actionLabels + '</span></div>' +
+        '</div>';
+      }).join('');
     }
 
     function switchTab(name) {
@@ -670,6 +750,7 @@ export function renderDashboardHtml(): string {
         if (t.status === 'running') badgeColor = 'var(--primary)';
         if (t.status === 'finished') badgeColor = 'var(--success)';
         if (t.status === 'failed') badgeColor = 'var(--danger)';
+        if (t.status === 'abandoned') badgeColor = 'var(--warning)';
 
         return \`<tr>
           <td><strong>\${t.task_id}</strong></td>
@@ -686,45 +767,156 @@ export function renderDashboardHtml(): string {
       }).join('');
     }
 
-    async function viewTaskDetail(id) {
+    function viewTaskDetail(id) {
       selectedTaskId = id;
-      try {
-        const res = await fetch('/api/tasks/' + id);
-        const task = await res.json();
-        document.getElementById('modal-task-title').innerText = '任务详情: ' + task.id;
-        document.getElementById('modal-status').innerText = task.status;
-        document.getElementById('modal-mode').innerText = task.mode;
-        document.getElementById('modal-cwd').innerText = task.cwd;
-        const dur = task.finishedAt ? Math.round((task.finishedAt - task.createdAt) / 1000) + 's' : Math.round((Date.now() - task.createdAt) / 1000) + 's (运行中)';
-        document.getElementById('modal-duration').innerText = dur;
-        document.getElementById('modal-prompt').innerText = task.prompt || '';
-        document.getElementById('modal-stdout').innerText = task.stdoutTail || '(无输出)';
-
-        const turnsBox = document.getElementById('modal-turns-container');
-        if (!task.turnHistory || task.turnHistory.length === 0) {
-          turnsBox.innerHTML = '<span style="font-size: 12px; color: var(--text-muted);">暂无轮次记录</span>';
-        } else {
-          turnsBox.innerHTML = task.turnHistory.map(th => {
-            return \`<div style="background: rgba(0,0,0,0.25); border: 1px solid var(--card-border); padding: 8px 12px; border-radius: 6px; font-size: 12px;">
-              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
-                <strong>Turn #\${th.seq} (\${th.id})</strong>
-                <span style="color: var(--text-muted);">\${th.answeredAt ? '已回复' : '等待回复'}</span>
-              </div>
-              <div style="color: var(--primary);">回复动作: \${th.replyLabels ? th.replyLabels.join(', ') : '处理中'}</div>
-            </div>\`;
-          }).join('');
-        }
-
-        document.getElementById('modal-cancel-btn').style.display = task.status === 'running' ? 'inline-flex' : 'none';
-        document.getElementById('task-modal').classList.add('open');
-      } catch (e) {
-        alert('获取详情失败');
+      if (currentEventSource) {
+        currentEventSource.close();
+        currentEventSource = null;
       }
+
+      document.getElementById('modal-task-title').innerText = '任务详情: ' + id;
+      document.getElementById('modal-status').innerText = '连接中...';
+      document.getElementById('modal-mode').innerText = '--';
+      document.getElementById('modal-cwd').innerText = '--';
+      document.getElementById('modal-duration').innerText = '--';
+      document.getElementById('modal-prompt').innerText = '--';
+      document.getElementById('modal-stdout').innerText = '';
+      document.getElementById('modal-turns-container').innerHTML = '<span style="font-size: 12px; color: var(--text-muted);">正在连接实时日志流...</span>';
+      document.getElementById('modal-cancel-btn').style.display = 'none';
+      updateModalStreamBadge('running');
+
+      document.getElementById('task-modal').classList.add('open');
+
+      const es = new EventSource('/api/tasks/' + id + '/stream');
+      currentEventSource = es;
+
+      let currentTaskMeta = null;
+
+      es.addEventListener('init', (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          currentTaskMeta = data.task;
+          document.getElementById('modal-task-title').innerText = '任务详情: ' + currentTaskMeta.id;
+          
+          let statusColor = 'var(--text-muted)';
+          if (currentTaskMeta.status === 'running') statusColor = 'var(--primary)';
+          if (currentTaskMeta.status === 'finished') statusColor = 'var(--success)';
+          if (currentTaskMeta.status === 'failed') statusColor = 'var(--danger)';
+          if (currentTaskMeta.status === 'abandoned') statusColor = 'var(--warning)';
+          const statusEl = document.getElementById('modal-status');
+          statusEl.innerText = currentTaskMeta.status;
+          statusEl.style.color = statusColor;
+
+          document.getElementById('modal-mode').innerText = currentTaskMeta.mode;
+          document.getElementById('modal-cwd').innerText = currentTaskMeta.cwd;
+          const dur = currentTaskMeta.finishedAt
+            ? Math.round((currentTaskMeta.finishedAt - currentTaskMeta.createdAt) / 1000) + 's'
+            : Math.round((Date.now() - currentTaskMeta.createdAt) / 1000) + 's (运行中)';
+          document.getElementById('modal-duration').innerText = dur;
+          document.getElementById('modal-prompt').innerText = currentTaskMeta.prompt || '';
+
+          renderTurnItems(currentTaskMeta.turnHistory);
+
+          const stdoutEl = document.getElementById('modal-stdout');
+          stdoutEl.innerText = data.stdout || '';
+          if (document.getElementById('modal-auto-scroll').checked) {
+            stdoutEl.scrollTop = stdoutEl.scrollHeight;
+          }
+
+          document.getElementById('modal-cancel-btn').style.display = currentTaskMeta.status === 'running' ? 'inline-flex' : 'none';
+          updateModalStreamBadge(currentTaskMeta.status);
+        } catch (err) {
+          console.error('Parse init event error', err);
+        }
+      });
+
+      es.addEventListener('log', (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          const stdoutEl = document.getElementById('modal-stdout');
+          stdoutEl.innerText += payload.chunk;
+          if (document.getElementById('modal-auto-scroll').checked) {
+            stdoutEl.scrollTop = stdoutEl.scrollHeight;
+          }
+        } catch (err) {
+          console.error('Parse log event error', err);
+        }
+      });
+
+      es.addEventListener('turn', (e) => {
+        try {
+          const turnData = JSON.parse(e.data);
+          if (currentTaskMeta) {
+            if (!currentTaskMeta.turnHistory) currentTaskMeta.turnHistory = [];
+            currentTaskMeta.turnHistory.push({
+              seq: turnData.seq,
+              id: turnData.id,
+              createdAt: turnData.createdAt,
+            });
+            renderTurnItems(currentTaskMeta.turnHistory);
+          }
+        } catch (err) {
+          console.error('Parse turn event error', err);
+        }
+      });
+
+      es.addEventListener('turn_answered', (e) => {
+        try {
+          const ansData = JSON.parse(e.data);
+          if (currentTaskMeta && currentTaskMeta.turnHistory) {
+            const item = currentTaskMeta.turnHistory.find(h => h.id === ansData.id);
+            if (item) {
+              item.answeredAt = ansData.answeredAt;
+              item.replyLabels = ansData.replyLabels;
+            }
+            renderTurnItems(currentTaskMeta.turnHistory);
+          }
+        } catch (err) {
+          console.error('Parse turn_answered event error', err);
+        }
+      });
+
+      es.addEventListener('end', (e) => {
+        try {
+          const endData = JSON.parse(e.data);
+          const statusEl = document.getElementById('modal-status');
+          statusEl.innerText = endData.status;
+          if (endData.status === 'finished') statusEl.style.color = 'var(--success)';
+          else if (endData.status === 'failed') statusEl.style.color = 'var(--danger)';
+          else if (endData.status === 'abandoned') statusEl.style.color = 'var(--warning)';
+          else statusEl.style.color = 'var(--text-muted)';
+
+          if (currentTaskMeta && currentTaskMeta.createdAt) {
+            const finTime = endData.finishedAt || Date.now();
+            document.getElementById('modal-duration').innerText = Math.round((finTime - currentTaskMeta.createdAt) / 1000) + 's';
+          }
+          document.getElementById('modal-cancel-btn').style.display = 'none';
+          updateModalStreamBadge(endData.status);
+
+          if (currentEventSource) {
+            currentEventSource.close();
+            currentEventSource = null;
+          }
+          fetchTasks();
+        } catch (err) {
+          console.error('Parse end event error', err);
+        }
+      });
+
+      es.onerror = () => {
+        if (currentTaskMeta && currentTaskMeta.status === 'running') {
+          updateModalStreamBadge('重连中...');
+        }
+      };
     }
 
     function closeModal() {
       document.getElementById('task-modal').classList.remove('open');
       selectedTaskId = null;
+      if (currentEventSource) {
+        currentEventSource.close();
+        currentEventSource = null;
+      }
     }
 
     async function cancelTask(id) {

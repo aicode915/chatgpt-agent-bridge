@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "start": "node dist/server.js",
-    "test:local": "tsx scripts/local-loop-test.ts"
+    "test:local": "tsx scripts/local-loop-test.ts",
+    "test:idle": "tsx scripts/test-idle-stream.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest"

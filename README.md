@@ -67,11 +67,20 @@ Once started, the embedded Web Dashboard is accessible directly in your browser:
 👉 **http://127.0.0.1:8791** (Configurable via `BRIDGE_PORT`, default: `8791`; single-process embedded, zero extra port/dependency overhead)
 
 Features:
-1. **📋 Tasks & Session Monitor**: Real-time inspection of active & finished tasks, multi-turn interaction history (ChatGPT's JS/replies and Codex tool outputs), live terminal output streams (stdout/stderr tail), and one-click task cancellation.
+1. **📋 Tasks & Session Monitor**: Real-time inspection of active & finished tasks (running/finished/failed/abandoned), multi-turn interaction history (ChatGPT's JS/replies and Codex tool outputs), **SSE-driven live terminal log streaming** (with auto-scroll, clear screen, and copy buttons), and one-click task cancellation.
 2. **🛡️ Security Policy Lock**: Visual selector for the maximum allowed sandbox mode (`read-only`, `workspace-write`, or `danger-full-access`). **Server enforces hard security checks**: if ChatGPT requests a mode exceeding the lock, the server intercepts and protects your system.
 3. **📁 Workspaces Management**: Manage allowed project root paths (white-list) to prevent path escaping; switch active default workspace with one click.
 4. **⚡ ChatGPT Prompt Assistant**: Dynamically generates tailored driver prompts based on the currently selected workspace and security mode, complete with one-click clipboard copying.
 5. **🔌 Tunnel & System Status**: Live health checks for Secure MCP Tunnel, environment & Codex diagnostics, and one-click tunnel restarting.
+
+---
+
+## Orphan Task Self-Healing & Idle Timeout
+
+In conversational AI workflows, ChatGPT may finish answering the user's objective or the user may close the chat window, leaving a pending model request (Pending Turn) unanswered without further polling or replies:
+- **Idle Timeout Detection**: When a turn request is pending from Codex, if the client goes idle for >60s (customizable via `TURN_IDLE_TIMEOUT_SECS`) without polling or calling `codex_reply`, the bridge triggers automatic idle reaping.
+- **Orphan Task Cleanup**: The hanging Codex subprocess is gracefully terminated (`SIGTERM` $\to$ `SIGKILL`), and the task status transitions immediately to `abandoned`.
+- **Live Event Broadcast**: The dashboard and SSE subscribers instantly receive the `end` event with the `abandoned` status, preventing lingering orphan processes and freeing local resources.
 
 ---
 

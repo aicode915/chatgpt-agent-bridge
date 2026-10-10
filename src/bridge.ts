@@ -25,7 +25,7 @@ import { ConfigManager } from "./config.js";
 import { renderDashboardHtml } from "./dashboard.js";
 
 export type TaskMode = "read-only" | "workspace-write" | "danger-full-access";
-export type TaskStatus = "running" | "finished" | "failed" | "cancelled";
+export type TaskStatus = "running" | "finished" | "failed" | "cancelled" | "abandoned";
 
 export interface TurnHistoryItem {
   seq: number;
@@ -93,21 +93,36 @@ interface BridgeTask {
   exitCode: number | null;
   signal: NodeJS.Signals | null;
   error?: string;
-  killReason?: "user" | "timeout" | "stop";
+  killReason?: "user" | "timeout" | "stop" | "abandoned";
   pending?: PendingTurn;
   turns: number;
   turnHistory: TurnHistoryItem[];
   loggedOutputs: number;
   timeoutTimer: NodeJS.Timeout;
+  lastActivityAt: number;
+  idleTimer: NodeJS.Timeout | null;
+  logListeners: Set<(event: string, data: any) => void>;
 }
 
 const OUTPUT_TAIL = 200_000; // 每个流保留最后 200KB
 const TEXT_CAP_PER_ITEM = 16_000;
 const RENDER_CAP_TOTAL = 220_000;
 const DEFAULT_PORT = 8791;
+const DEFAULT_IDLE_TURN_TIMEOUT_SECS = 60;
+const IDLE_TURN_TIMEOUT_MS = Number(process.env.TURN_IDLE_TIMEOUT_SECS ?? DEFAULT_IDLE_TURN_TIMEOUT_SECS) * 1000;
 
 const log = (message: string) => console.error(`[bridge] ${message}`);
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+function broadcastTaskEvent(task: BridgeTask, event: string, data: any): void {
+  for (const listener of task.logListeners) {
+    try {
+      listener(event, data);
+    } catch {
+      /* ignore broken subscriber */
+    }
+  }
+}
 
 let idCounter = 0;
 function newId(prefix: string): string {
@@ -500,17 +515,22 @@ function summarizeEnd(task: BridgeTask): PollResult {
 /* ------------------------------------------------------------------ */
 
 export interface ModelBridgeOptions {
+  port?: number;
+  turnIdleTimeoutSecs?: number;
   configManager?: ConfigManager;
 }
 
 export class ModelBridge {
   readonly apiKey = crypto.randomBytes(24).toString("hex");
-  port = Number(process.env.BRIDGE_PORT ?? DEFAULT_PORT);
+  port: number;
+  readonly idleTimeoutMs: number;
   readonly configManager: ConfigManager;
   private tasks = new Map<string, BridgeTask>();
   private server: http.Server | null = null;
 
   constructor(options?: ModelBridgeOptions) {
+    this.port = options?.port ?? Number(process.env.BRIDGE_PORT ?? DEFAULT_PORT);
+    this.idleTimeoutMs = (options?.turnIdleTimeoutSecs ?? Number(process.env.TURN_IDLE_TIMEOUT_SECS ?? DEFAULT_IDLE_TURN_TIMEOUT_SECS)) * 1000;
     this.configManager = options?.configManager ?? new ConfigManager();
   }
 
@@ -606,6 +626,9 @@ export class ModelBridge {
       turnHistory: [],
       loggedOutputs: 0,
       timeoutTimer: setTimeout(() => this.killTask(task, "timeout"), options.timeoutSecs * 1000),
+      lastActivityAt: Date.now(),
+      idleTimer: null,
+      logListeners: new Set(),
     };
     this.tasks.set(id, task);
 
@@ -614,30 +637,36 @@ export class ModelBridge {
     child.stdout?.on("data", (chunk: string) => {
       task.stdout = appendCapped(task.stdout, chunk);
       teeCodexChunk(task, "stdout", chunk);
+      broadcastTaskEvent(task, "log", { stream: "stdout", chunk, timestamp: Date.now() });
     });
     child.stderr?.on("data", (chunk: string) => {
       task.stderr = appendCapped(task.stderr, chunk);
       teeCodexChunk(task, "stderr", chunk);
+      broadcastTaskEvent(task, "log", { stream: "stderr", chunk, timestamp: Date.now() });
     });
     child.on("error", (error) => {
       task.error = `spawn failed: ${error.message}`;
       task.status = "failed";
       clearTimeout(task.timeoutTimer);
+      if (task.idleTimer) {
+        clearTimeout(task.idleTimer);
+        task.idleTimer = null;
+      }
       this.failPending(task, task.error);
       log(`task ${id}: spawn failed: ${error.message}`);
+      broadcastTaskEvent(task, "end", { status: "failed", error: task.error, finishedAt: Date.now() });
     });
     child.on("close", (code, signal) => {
       clearTimeout(task.timeoutTimer);
+      if (task.idleTimer) {
+        clearTimeout(task.idleTimer);
+        task.idleTimer = null;
+      }
       task.exitCode = code;
       task.signal = signal;
-      task.finishedAt = Date.now();
+      task.finishedAt = task.finishedAt ?? Date.now();
       if (task.status === "running") {
-        if (task.killReason === "timeout") {
-          task.error = task.error ?? `timeout after ${task.timeoutSecs}s`;
-          task.status = "failed";
-        } else if (task.killReason) {
-          task.status = "cancelled";
-        } else if (code === 0) {
+        if (code === 0) {
           task.status = "finished";
         } else {
           task.status = "failed";
@@ -648,6 +677,12 @@ export class ModelBridge {
         this.failPending(task, `task ended before answer (${task.status})`);
       }
       log(`task ${id}: codex closed (code=${code ?? "null"}, signal=${signal ?? "-"}) -> ${task.status}`);
+      broadcastTaskEvent(task, "end", {
+        status: task.status,
+        exitCode: task.exitCode,
+        error: task.error,
+        finishedAt: task.finishedAt,
+      });
     });
 
     log(`task ${id}: spawned codex pid=${child.pid ?? "?"} (mode=${options.mode}, cwd=${options.cwd})`);
@@ -657,10 +692,13 @@ export class ModelBridge {
   async poll(taskId: string, waitSecs: number): Promise<PollResult> {
     const task = this.tasks.get(taskId);
     if (!task) throw new Error(`unknown task_id: ${taskId}`);
+    task.lastActivityAt = Date.now();
     const deadline = Date.now() + Math.min(Math.max(waitSecs, 0), 60) * 1000;
     for (;;) {
       const pending = task.pending;
       if (pending && !pending.answered) {
+        // ChatGPT 正在轮询该 pending 请求，重置空闲定时器，给 ChatGPT 足够的时间作答 (waitSecs + 45s)
+        this.resetTurnIdleTimer(task, pending, Math.max(waitSecs * 1000 + 45_000, this.idleTimeoutMs));
         return { kind: "model_request", turnId: pending.id, turnNumber: pending.seq, text: renderTurn(task, pending) };
       }
       if (task.status !== "running") return summarizeEnd(task);
@@ -685,6 +723,11 @@ export class ModelBridge {
     if (pending.id !== turnId) {
       throw new Error(`turn_id mismatch: the current pending turn is ${pending.id}, not ${turnId}`);
     }
+    if (task.idleTimer) {
+      clearTimeout(task.idleTimer);
+      task.idleTimer = null;
+    }
+    task.lastActivityAt = Date.now();
     const items = parseReply(replyText);
     this.completeTurn(pending, task, items);
     task.pending = undefined;
@@ -695,6 +738,12 @@ export class ModelBridge {
       historyItem.replyLabels = ack.emitted;
     }
     log(`task ${taskId}: turn ${turnId} answered -> ${ack.emitted.join(", ")}`);
+    broadcastTaskEvent(task, "turn_answered", {
+      seq: pending.seq,
+      id: turnId,
+      replyLabels: ack.emitted,
+      answeredAt: Date.now(),
+    });
     return ack;
   }
 
@@ -772,6 +821,23 @@ export class ModelBridge {
     });
   }
 
+  private resetTurnIdleTimer(task: BridgeTask, turn: PendingTurn, customMs?: number): void {
+    if (task.idleTimer) {
+      clearTimeout(task.idleTimer);
+      task.idleTimer = null;
+    }
+    if (task.status !== "running") return;
+    const ms = customMs ?? this.idleTimeoutMs;
+    task.idleTimer = setTimeout(() => {
+      if (task.status !== "running") return;
+      if (task.pending && task.pending.id === turn.id && !task.pending.answered) {
+        log(`task ${task.id}: idle timeout reached (${ms / 1000}s) on turn ${turn.id}; reaping abandoned task`);
+        this.killTask(task, "abandoned");
+      }
+    }, ms);
+    task.idleTimer.unref?.();
+  }
+
   /* ---------------------------- internals ---------------------------- */
 
   private async handleHttp(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -823,6 +889,92 @@ export class ModelBridge {
         const msg = this.cancel(taskCancelMatch[1]);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ message: msg }));
+        return;
+      }
+      const taskStreamMatch = url.match(/^\/api\/tasks\/([A-Za-z0-9_]+)\/stream$/);
+      if (req.method === "GET" && taskStreamMatch) {
+        const taskId = taskStreamMatch[1];
+        const task = this.tasks.get(taskId);
+        if (!task) {
+          res.writeHead(404, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "task not found" }));
+          return;
+        }
+
+        res.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          "connection": "keep-alive",
+          "x-accel-buffering": "no",
+        });
+
+        const sendEvent = (event: string, data: any) => {
+          try {
+            res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+          } catch {
+            /* socket closed */
+          }
+        };
+
+        sendEvent("init", {
+          task: {
+            id: task.id,
+            status: task.status,
+            mode: task.mode,
+            cwd: task.cwd,
+            prompt: task.prompt,
+            timeoutSecs: task.timeoutSecs,
+            createdAt: task.createdAt,
+            finishedAt: task.finishedAt,
+            exitCode: task.exitCode,
+            signal: task.signal,
+            error: task.error,
+            turns: task.turns,
+            turnHistory: task.turnHistory,
+          },
+          stdout: task.stdout,
+          stderr: task.stderr,
+        });
+
+        if (task.status !== "running") {
+          sendEvent("end", {
+            status: task.status,
+            exitCode: task.exitCode,
+            error: task.error,
+            finishedAt: task.finishedAt,
+          });
+          res.end();
+          return;
+        }
+
+        const cleanup = () => {
+          clearInterval(keepalive);
+          task.logListeners.delete(listener);
+        };
+
+        const listener = (event: string, data: any) => {
+          sendEvent(event, data);
+          if (event === "end") {
+            cleanup();
+            try {
+              res.end();
+            } catch {
+              /* ignore */
+            }
+          }
+        };
+
+        task.logListeners.add(listener);
+
+        const keepalive = setInterval(() => {
+          try {
+            res.write(`: ping\n\n`);
+          } catch {
+            cleanup();
+          }
+        }, 15_000);
+
+        req.on("close", cleanup);
         return;
       }
       if (req.method === "POST" && url === "/api/config/security") {
@@ -923,7 +1075,14 @@ export class ModelBridge {
       };
       task.turns = turn.seq;
       task.pending = turn;
+      task.lastActivityAt = Date.now();
       task.turnHistory.push({
+        seq: turn.seq,
+        id: turn.id,
+        createdAt: turn.createdAt,
+      });
+      this.resetTurnIdleTimer(task, turn);
+      broadcastTaskEvent(task, "turn", {
         seq: turn.seq,
         id: turn.id,
         createdAt: turn.createdAt,
@@ -1039,11 +1198,31 @@ export class ModelBridge {
     }
   }
 
-  private killTask(task: BridgeTask, reason: "user" | "timeout" | "stop"): void {
+  private killTask(task: BridgeTask, reason: "user" | "timeout" | "stop" | "abandoned"): void {
     if (task.status !== "running") return;
+    if (task.idleTimer) {
+      clearTimeout(task.idleTimer);
+      task.idleTimer = null;
+    }
     task.killReason = reason;
-    if (reason === "timeout") task.error = `timeout after ${task.timeoutSecs}s`;
-    log(`task ${task.id}: killing codex (${reason})`);
+    if (reason === "timeout") {
+      task.status = "failed";
+      task.error = `timeout after ${task.timeoutSecs}s`;
+      this.failPending(task, task.error);
+    } else if (reason === "abandoned") {
+      task.status = "abandoned";
+      task.error = `abandoned: ChatGPT client idle for >${this.idleTimeoutMs / 1000}s without reply`;
+      this.failPending(task, task.error);
+    } else {
+      task.status = "cancelled";
+      this.failPending(task, `task cancelled (${reason})`);
+    }
+    broadcastTaskEvent(task, "end", {
+      status: task.status,
+      error: task.error,
+      finishedAt: Date.now(),
+    });
+    log(`task ${task.id}: killing codex (${reason}) -> ${task.status}`);
     try {
       task.child.kill("SIGTERM");
     } catch {
