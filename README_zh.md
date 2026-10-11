@@ -117,7 +117,9 @@ CONTROL_PLANE_API_KEY=sk-...
 ```bash
 ./scripts/start-tunnel.sh
 ```
-> **✨ 全自动零配置**：首次运行时，脚本会自动执行 `npm install`、`npm run build`，并自动为当前项目路径完成 `tunnel-client` Profile 的初始化，免去繁琐的手工配置。
+> **✨ 全自动零配置 & 交互式向导**：
+> - 若尚未创建 `.env`，脚本会自动启动终端配置向导，引导输入 Tunnel ID 与 API Key 并全自动生成配置文件；
+> - 首次运行时，脚本会自动执行 `npm install`、`npm run build`，并自动为当前项目路径完成 `tunnel-client` Profile 的初始化，免去繁琐的手工配置。
 > - 若服务已在运行需平滑重启：`./scripts/start-tunnel.sh --restart`
 > - 本地无 ChatGPT 闭环测试：`npm run test:local`
 

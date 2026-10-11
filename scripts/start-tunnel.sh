@@ -30,10 +30,73 @@ if ! command -v codex >/dev/null 2>&1; then
   echo "  参考：brew install codex 或访问 https://github.com/openai/codex" >&2
 fi
 
-if [ ! -f .env ]; then
-  echo "✗ 缺少 $PROJECT_DIR/.env（需要配置 CONTROL_PLANE_API_KEY 和 CONTROL_PLANE_TUNNEL_ID）" >&2
-  echo "  请先复制模板创建：cp .env.example .env 并填入实际凭证" >&2
+if ! command -v node >/dev/null 2>&1; then
+  echo "✗ 未检测到 'node' 命令。请先安装 Node.js (>= 18)：" >&2
+  echo "  参考：brew install node 或访问 https://nodejs.org" >&2
   exit 1
+fi
+
+prompt_for_credentials() {
+  echo ""
+  echo "=================================================================="
+  echo "  🚀 欢迎使用 ChatGPT Agent Bridge 首次配置向导 (Setup Wizard)"
+  echo "=================================================================="
+  echo "检测到尚未配置 OpenAI 凭证，现在为您引导生成 .env 配置文件："
+  echo ""
+  echo "提示：若尚未创建隧道或密钥，请访问："
+  echo "  • 隧道 ID：https://platform.openai.com/settings/organization/tunnels"
+  echo "  • 运行时密钥：https://platform.openai.com/settings/organization/api-keys"
+  echo "------------------------------------------------------------------"
+  echo ""
+
+  local tunnel_id=""
+  while [ -z "$tunnel_id" ]; do
+    read -r -p "👉 请输入 OpenAI Tunnel ID (如 tunnel_xxxx): " tunnel_id
+    tunnel_id="$(echo "$tunnel_id" | tr -d '[:space:]')"
+    if [ -z "$tunnel_id" ]; then
+      echo "  ⚠️ Tunnel ID 不能为空，请重新输入"
+    fi
+  done
+
+  local api_key=""
+  while [ -z "$api_key" ]; do
+    read -r -p "👉 请输入 OpenAI 运行时 API Key (如 sk-...): " api_key
+    api_key="$(echo "$api_key" | tr -d '[:space:]')"
+    if [ -z "$api_key" ]; then
+      echo "  ⚠️ API Key 不能为空，请重新输入"
+    fi
+  done
+
+  echo ""
+  if [ -f .env.example ]; then
+    cp .env.example .env
+    node -e "
+const fs = require('fs');
+let c = fs.readFileSync('.env', 'utf8');
+c = c.replace(/CONTROL_PLANE_TUNNEL_ID=.*/, 'CONTROL_PLANE_TUNNEL_ID=' + process.argv[1]);
+c = c.replace(/CONTROL_PLANE_API_KEY=.*/, 'CONTROL_PLANE_API_KEY=' + process.argv[2]);
+fs.writeFileSync('.env', c);
+" "$tunnel_id" "$api_key"
+  else
+    cat <<EOF > .env
+CONTROL_PLANE_TUNNEL_ID=$tunnel_id
+CONTROL_PLANE_API_KEY=$api_key
+EOF
+  fi
+
+  echo "✓ 成功创建并保存 .env 配置文件！"
+  echo "------------------------------------------------------------------"
+  echo ""
+}
+
+if [ ! -f .env ]; then
+  if [ -t 0 ]; then
+    prompt_for_credentials
+  else
+    echo "✗ 缺少 $PROJECT_DIR/.env（需要配置 CONTROL_PLANE_API_KEY 和 CONTROL_PLANE_TUNNEL_ID）" >&2
+    echo "  请先复制模板创建：cp .env.example .env 并填入实际凭证" >&2
+    exit 1
+  fi
 fi
 
 set -a
@@ -41,14 +104,22 @@ set -a
 source .env
 set +a
 
-if [ -z "${CONTROL_PLANE_API_KEY:-}" ]; then
-  echo "✗ .env 里缺少 CONTROL_PLANE_API_KEY" >&2
-  exit 1
-fi
-
-if [ -z "${CONTROL_PLANE_TUNNEL_ID:-}" ]; then
-  echo "✗ .env 里缺少 CONTROL_PLANE_TUNNEL_ID（= ChatGPT 连接器绑定的那条隧道 ID）" >&2
-  exit 1
+if [ -z "${CONTROL_PLANE_API_KEY:-}" ] || [ -z "${CONTROL_PLANE_TUNNEL_ID:-}" ]; then
+  if [ -t 0 ]; then
+    prompt_for_credentials
+    set -a
+    # shellcheck disable=SC1091
+    source .env
+    set +a
+  else
+    if [ -z "${CONTROL_PLANE_API_KEY:-}" ]; then
+      echo "✗ .env 里缺少 CONTROL_PLANE_API_KEY" >&2
+    fi
+    if [ -z "${CONTROL_PLANE_TUNNEL_ID:-}" ]; then
+      echo "✗ .env 里缺少 CONTROL_PLANE_TUNNEL_ID（= ChatGPT 连接器绑定的那条隧道 ID）" >&2
+    fi
+    exit 1
+  fi
 fi
 
 # 自动安装依赖与自动编译

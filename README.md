@@ -117,7 +117,9 @@ Run the smart launcher in the project root:
 ```bash
 ./scripts/start-tunnel.sh
 ```
-> **✨ Zero-Config Automation**: On first run, the script automatically executes `npm install`, `npm run build`, and initializes the `tunnel-client` Profile for your current workspace directory, removing any manual profile setup.
+> **✨ Zero-Config Automation & Interactive Wizard**:
+> - If `.env` is not yet created, the script automatically triggers an interactive terminal wizard prompting for your Tunnel ID and API Key to generate `.env`;
+> - On first run, it automatically executes `npm install`, `npm run build`, and initializes the `tunnel-client` Profile, eliminating manual profile configuration.
 > - Smooth restart if already running: `./scripts/start-tunnel.sh --restart`
 > - Local closed-loop test without ChatGPT: `npm run test:local`
 
