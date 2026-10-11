@@ -98,32 +98,36 @@ brew install codex tunnel-client
 2. **Generate Runtime API Key**: Navigate to [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys), create or copy a runtime API key (e.g., `sk-...`).
 3. **Bind ChatGPT Connector**: Open [ChatGPT Connector Settings](https://chatgpt.com/#settings/Connectors), click "Create Custom Connector" → choose **Tunnel** connection method → select the tunnel you just created.
 
-### Step 3: Clone Repository & Configure Environment
+### Step 3: One-Click Service Launch
+
+#### 🌟 Recommended Option: Run via `npx` (Zero-Config & No Clone Needed)
+Run directly in any project folder without cloning the repository:
+```bash
+npx chatgpt-agent-bridge
+```
+> **✨ Zero-Config Automation & Interactive Wizard**:
+> - **Setup Wizard**: On first run, an interactive terminal wizard guides you through entering your `Tunnel ID` and `API Key`, saving them securely to `~/.config/chatgpt-agent-bridge/.env` (shared across projects, never re-prompted);
+> - **Auto Profile Setup**: Automatically detects tools and sets up the `tunnel-client` Profile;
+> - **Useful CLI Commands**:
+>   ```bash
+>   npx chatgpt-agent-bridge status       # Check status, credentials, and workspaces
+>   npx chatgpt-agent-bridge --restart    # Smoothly restart the tunnel daemon
+>   npx chatgpt-agent-bridge --port 8791  # Specify custom dashboard and bridge port
+>   npx chatgpt-agent-bridge server       # Run directly in MCP Stdio protocol mode
+>   ```
+
+#### Source Development Option (Git Clone)
+For local development and contributions:
 ```bash
 git clone https://github.com/aicode915/chatgpt-agent-bridge.git
 cd chatgpt-agent-bridge
-
-# Create .env from template (git-ignored, never committed)
-cp .env.example .env
-```
-Open `.env` in an editor and fill in the credentials obtained in Step 2:
-```bash
-CONTROL_PLANE_TUNNEL_ID=tunnel_xxxx
-CONTROL_PLANE_API_KEY=sk-...
-```
-
-### Step 4: One-Click Service Launch
-Run the smart launcher in the project root:
-```bash
 ./scripts/start-tunnel.sh
 ```
-> **✨ Zero-Config Automation & Interactive Wizard**:
-> - If `.env` is not yet created, the script automatically triggers an interactive terminal wizard prompting for your Tunnel ID and API Key to generate `.env`;
-> - On first run, it automatically executes `npm install`, `npm run build`, and initializes the `tunnel-client` Profile, eliminating manual profile configuration.
-> - Smooth restart if already running: `./scripts/start-tunnel.sh --restart`
-> - Local closed-loop test without ChatGPT: `npm run test:local`
+If `.env` is not found, the script automatically triggers the interactive setup wizard.
+- Restart tunnel: `./scripts/start-tunnel.sh --restart`
+- Local closed-loop loop test: `npm run test:local`
 
-### Step 5: Drive Codex from ChatGPT
+### Step 4: Drive Codex from ChatGPT
 Open the built-in Web Dashboard in your browser: 👉 **http://127.0.0.1:8791**. In the "⚡ Prompt Assistant" tab, two usage options are available:
 
 #### 🌟 Recommended Option (Universal & Free · Zero-Friction): Set as Custom Instructions

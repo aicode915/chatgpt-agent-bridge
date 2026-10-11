@@ -1,15 +1,50 @@
 {
   "name": "chatgpt-agent-bridge",
   "version": "0.1.0",
-  "private": true,
+  "description": "Bridge ChatGPT with local OpenAI Codex CLI via MCP and secure outbound tunnel - zero quota, full interactive agent.",
   "type": "module",
+  "bin": {
+    "chatgpt-agent-bridge": "./dist/cli.js"
+  },
+  "main": "./dist/server.js",
+  "files": [
+    "dist",
+    ".env.example",
+    "README.md",
+    "README_zh.md",
+    "OPTIMIZATIONS.md"
+  ],
   "scripts": {
     "dev": "tsx src/server.ts",
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json && chmod +x dist/cli.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "start": "node dist/server.js",
+    "start": "node dist/cli.js",
+    "server": "node dist/server.js",
     "test:local": "tsx scripts/local-loop-test.ts",
     "test:idle": "tsx scripts/test-idle-stream.ts"
+  },
+  "keywords": [
+    "chatgpt",
+    "codex",
+    "mcp",
+    "modelcontextprotocol",
+    "ai-agent",
+    "tunnel-client",
+    "automation",
+    "developer-tools"
+  ],
+  "author": "aicode915",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aicode915/chatgpt-agent-bridge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/aicode915/chatgpt-agent-bridge/issues"
+  },
+  "homepage": "https://github.com/aicode915/chatgpt-agent-bridge#readme",
+  "engines": {
+    "node": ">=18.0.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "latest"

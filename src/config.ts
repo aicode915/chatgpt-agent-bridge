@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type TaskMode } from "./bridge.js";
@@ -37,15 +38,27 @@ export class ConfigManager {
       } catch {
         this.configPath = path.resolve(resolved, "bridge-config.json");
       }
+    } else if (process.env.BRIDGE_CONFIG_PATH) {
+      this.configPath = path.resolve(process.env.BRIDGE_CONFIG_PATH);
     } else {
-      this.configPath = path.resolve(BRIDGE_ROOT, "bridge-config.json");
+      const cwdConfig = path.resolve(process.cwd(), "bridge-config.json");
+      const rootConfig = path.resolve(BRIDGE_ROOT, "bridge-config.json");
+      if (fs.existsSync(cwdConfig)) {
+        this.configPath = cwdConfig;
+      } else if (fs.existsSync(rootConfig)) {
+        this.configPath = rootConfig;
+      } else {
+        const userConfigDir = path.join(os.homedir(), ".config", "chatgpt-agent-bridge");
+        this.configPath = path.join(userConfigDir, "bridge-config.json");
+      }
     }
 
     const envWorkspace = process.env.WORKSPACE_ROOT ? path.resolve(process.env.WORKSPACE_ROOT) : "";
+    const defaultWorkspace = envWorkspace || (fs.existsSync(process.cwd()) ? path.resolve(process.cwd()) : "");
     this.data = {
       maxAllowedMode: "workspace-write",
-      allowedWorkspaces: envWorkspace ? [envWorkspace] : [],
-      activeWorkspace: envWorkspace,
+      allowedWorkspaces: defaultWorkspace ? [defaultWorkspace] : [],
+      activeWorkspace: defaultWorkspace,
     };
     this.load();
   }
@@ -72,6 +85,10 @@ export class ConfigManager {
 
   save(): void {
     try {
+      const dir = path.dirname(this.configPath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
       fs.writeFileSync(this.configPath, JSON.stringify(this.data, null, 2), "utf8");
     } catch (err) {
       console.error(`[config] failed to save ${this.configPath}: ${(err as Error).message}`);

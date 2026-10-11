@@ -408,17 +408,26 @@ export class ModelBridge {
 
   restartTunnel(): Promise<string> {
     return new Promise((resolve) => {
+      const cliPath = path.resolve(__dirname, "cli.js");
       const scriptPath = path.resolve(process.cwd(), "scripts/start-tunnel.sh");
-      if (!fs.existsSync(scriptPath)) {
-        resolve("start-tunnel.sh script not found");
-        return;
+
+      if (fs.existsSync(cliPath)) {
+        const child = spawn(process.execPath, [cliPath, "--restart"], {
+          detached: true,
+          stdio: "ignore",
+        });
+        child.unref();
+        resolve("Tunnel restart triggered via CLI in background");
+      } else if (fs.existsSync(scriptPath)) {
+        const child = spawn("bash", [scriptPath, "--restart"], {
+          detached: true,
+          stdio: "ignore",
+        });
+        child.unref();
+        resolve("Tunnel restart triggered in background");
+      } else {
+        resolve("CLI entrypoint (cli.js) or start-tunnel.sh not found");
       }
-      const child = spawn("bash", [scriptPath, "--restart"], {
-        detached: true,
-        stdio: "ignore",
-      });
-      child.unref();
-      resolve("Tunnel restart triggered in background");
     });
   }
 

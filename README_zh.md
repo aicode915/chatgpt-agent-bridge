@@ -98,32 +98,36 @@ brew install codex tunnel-client
 2. **生成运行时 API Key**：访问 [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys)，创建或复制一个运行时 API 密钥（例如 `sk-...`）。
 3. **绑定 ChatGPT 连接器**：打开 [ChatGPT 连接器设置](https://chatgpt.com/#settings/Connectors)，点击“新建自定义连接器” → 连接方式选择 **Tunnel** → 勾选刚刚创建的隧道。
 
-### 步骤 3：克隆项目与配置环境变量
+### 步骤 3：一键启动服务
+
+#### 🌟 推荐方式：免 Clone 直接使用 `npx` 启动（零配置极简体验）
+无需克隆代码仓库，在终端直接执行：
+```bash
+npx chatgpt-agent-bridge
+```
+> **✨ 全自动零配置 & 交互式向导**：
+> - **首发向导**：首次运行时终端将自动进入交互式向导，提示输入 `Tunnel ID` 与 `API Key`，配置将安全持久化至 `~/.config/chatgpt-agent-bridge/.env`（跨项目共享，无需反复填写）；
+> - **自动初始化**：自动检测环境并配置 `tunnel-client` Profile，瞬间拉起服务并就绪；
+> - **CLI 常用命令**：
+>   ```bash
+>   npx chatgpt-agent-bridge status       # 查看凭证、工作区与隧道运行状态
+>   npx chatgpt-agent-bridge --restart    # 平滑重启隧道（中断并重新拉起）
+>   npx chatgpt-agent-bridge --port 8791  # 指定自定义 Web 控制台与桥接端口
+>   npx chatgpt-agent-bridge server       # 以标准 MCP Stdio 协议运行服务端
+>   ```
+
+#### 源码开发方式（Git Clone）
+若希望进行二次开发或本地测试：
 ```bash
 git clone https://github.com/aicode915/chatgpt-agent-bridge.git
 cd chatgpt-agent-bridge
-
-# 从模板创建 .env（该文件已被 .gitignore 忽略，不会提交至仓库）
-cp .env.example .env
-```
-用编辑器打开 `.env` 并填入步骤 2 中获取的凭证：
-```bash
-CONTROL_PLANE_TUNNEL_ID=tunnel_xxxx
-CONTROL_PLANE_API_KEY=sk-...
-```
-
-### 步骤 4：一键启动服务
-在项目根目录下直接运行一键启动脚本：
-```bash
 ./scripts/start-tunnel.sh
 ```
-> **✨ 全自动零配置 & 交互式向导**：
-> - 若尚未创建 `.env`，脚本会自动启动终端配置向导，引导输入 Tunnel ID 与 API Key 并全自动生成配置文件；
-> - 首次运行时，脚本会自动执行 `npm install`、`npm run build`，并自动为当前项目路径完成 `tunnel-client` Profile 的初始化，免去繁琐的手工配置。
-> - 若服务已在运行需平滑重启：`./scripts/start-tunnel.sh --restart`
-> - 本地无 ChatGPT 闭环测试：`npm run test:local`
+若未创建 `.env`，脚本同样会自动触发终端配置向导并引导生成环境配置。
+- 重启隧道：`./scripts/start-tunnel.sh --restart`
+- 本地无 ChatGPT 闭环测试：`npm run test:local`
 
-### 步骤 5：在 ChatGPT 中驱动 Codex
+### 步骤 4：在 ChatGPT 中驱动 Codex
 打开浏览器访问内置 Web 控制台：👉 **http://127.0.0.1:8791**。在“⚡ 提示词助手”中，我们提供了两种使用方式：
 
 #### 🌟 推荐方式（全员通用·彻底免去每次复制）：配置为 ChatGPT 自定义指令
