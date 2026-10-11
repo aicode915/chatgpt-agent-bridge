@@ -230,6 +230,39 @@ export function renderDashboardHtml(): string {
       color: #38bdf8;
     }
 
+    /* Diff View */
+    .diff-container {
+      background: var(--code-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 12px;
+      font-family: Menlo, Monaco, Consolas, monospace;
+      font-size: 12px;
+      max-height: 350px;
+      overflow-y: auto;
+      white-space: pre;
+      line-height: 1.45;
+    }
+    .diff-line { padding: 1px 4px; }
+    .diff-line-add { background: rgba(16, 185, 129, 0.15); color: #6ee7b7; }
+    .diff-line-del { background: rgba(239, 68, 68, 0.15); color: #fca5a5; }
+    .diff-line-hunk { color: #93c5fd; background: rgba(59, 130, 246, 0.1); font-weight: 600; }
+    .diff-line-meta { color: var(--text-muted); }
+    .file-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.07);
+    }
+    .file-pill-mod { color: #fbbf24; border: 1px solid rgba(251, 191, 36, 0.3); }
+    .file-pill-add { color: #34d399; border: 1px solid rgba(52, 211, 153, 0.3); }
+    .file-pill-del { color: #f87171; border: 1px solid rgba(248, 113, 113, 0.3); }
+    .file-pill-untracked { color: #a78bfa; border: 1px solid rgba(167, 139, 250, 0.3); }
+
     /* Toast */
     #toast {
       position: fixed;
@@ -504,6 +537,21 @@ export function renderDashboardHtml(): string {
           </div>
         </div>
         <div class="terminal-view" id="modal-stdout" style="max-height: 320px; font-family: Menlo, Monaco, Consolas, monospace; line-height: 1.45;"></div>
+      </div>
+
+      <!-- Git Diff Section -->
+      <div style="margin-bottom: 16px;" id="modal-diff-section">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 12px; font-weight: 600; color: var(--text-muted);">代码变更对比 (Git Diff):</span>
+            <span id="modal-diff-badge" class="badge" style="padding: 2px 8px; font-size: 11px;">检查中...</span>
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="fetchTaskDiff(selectedTaskId)">刷新 Diff</button>
+          </div>
+        </div>
+        <div id="modal-diff-files" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;"></div>
+        <div class="diff-container" id="modal-diff-view" style="display: none;"></div>
       </div>
 
       <div style="display: flex; justify-content: flex-end; gap: 10px;">
@@ -945,6 +993,7 @@ export function renderDashboardHtml(): string {
             currentEventSource = null;
           }
           fetchTasks();
+          fetchTaskDiff(selectedTaskId);
         } catch (err) {
           console.error('Parse end event error', err);
         }
@@ -955,6 +1004,98 @@ export function renderDashboardHtml(): string {
           updateModalStreamBadge('重连中...');
         }
       };
+
+      // Load Git Diff for this task
+      fetchTaskDiff(id);
+    }
+
+    async function fetchTaskDiff(id) {
+      if (!id) return;
+      const badge = document.getElementById('modal-diff-badge');
+      const filesBox = document.getElementById('modal-diff-files');
+      const diffView = document.getElementById('modal-diff-view');
+      badge.innerText = '拉取中...';
+      badge.className = 'badge';
+
+      try {
+        const res = await fetch('/api/tasks/' + id + '/diff');
+        if (!res.ok) {
+          badge.innerText = '未连接或非 Git 目录';
+          badge.className = 'badge';
+          filesBox.innerHTML = '';
+          diffView.style.display = 'none';
+          return;
+        }
+        const data = await res.json();
+        if (!data.isGitRepo) {
+          badge.innerText = '非 Git 仓库目录';
+          badge.className = 'badge';
+          filesBox.innerHTML = '';
+          diffView.style.display = 'none';
+          return;
+        }
+
+        if (!data.hasChanges) {
+          badge.innerText = '无文件变更 (Clean)';
+          badge.className = 'badge';
+          badge.style.color = 'var(--text-muted)';
+          filesBox.innerHTML = '<span style="font-size: 12px; color: var(--text-muted);">工作区代码无未提交修改</span>';
+          diffView.style.display = 'none';
+          return;
+        }
+
+        badge.innerText = (data.files.length + data.untracked.length) + ' 处变更';
+        badge.className = 'badge';
+        badge.style.color = 'var(--success)';
+
+        let pillsHtml = '';
+        (data.files || []).forEach(f => {
+          let pillClass = 'file-pill-mod';
+          let label = 'MOD';
+          if (f.status === 'added') { pillClass = 'file-pill-add'; label = '+ADD'; }
+          else if (f.status === 'deleted') { pillClass = 'file-pill-del'; label = '-DEL'; }
+          else if (f.status === 'renamed') { pillClass = 'file-pill-mod'; label = 'REN'; }
+          pillsHtml += '<span class="file-pill ' + pillClass + '"><strong>' + label + '</strong> ' + f.file + '</span>';
+        });
+        (data.untracked || []).forEach(u => {
+          pillsHtml += '<span class="file-pill file-pill-untracked"><strong>+NEW</strong> ' + u + '</span>';
+        });
+        filesBox.innerHTML = pillsHtml;
+
+        if (data.diff && data.diff.trim()) {
+          diffView.innerHTML = renderDiffHtml(data.diff);
+          diffView.style.display = 'block';
+        } else if (data.untracked.length > 0) {
+          diffView.innerHTML = '<div style="color: var(--text-muted); font-size: 12px; padding: 6px;">检测到新增未跟踪文件（Untracked），尚无版本记录 diff。</div>';
+          diffView.style.display = 'block';
+        } else {
+          diffView.style.display = 'none';
+        }
+      } catch (err) {
+        badge.innerText = '拉取失败';
+        filesBox.innerHTML = '';
+        diffView.style.display = 'none';
+      }
+    }
+
+    function renderDiffHtml(diffText) {
+      const escape = str => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const lines = diffText.split('\n');
+      return lines.map(line => {
+        const esc = escape(line);
+        if (line.startsWith('+++') || line.startsWith('---')) {
+          return '<div class="diff-line diff-line-meta">' + esc + '</div>';
+        } else if (line.startsWith('@@')) {
+          return '<div class="diff-line diff-line-hunk">' + esc + '</div>';
+        } else if (line.startsWith('+')) {
+          return '<div class="diff-line diff-line-add">' + esc + '</div>';
+        } else if (line.startsWith('-')) {
+          return '<div class="diff-line diff-line-del">' + esc + '</div>';
+        } else if (line.startsWith('diff --git')) {
+          return '<div class="diff-line diff-line-meta" style="font-weight: 700; color: #fff; border-top: 1px solid var(--card-border); margin-top: 6px; padding-top: 4px;">' + esc + '</div>';
+        }
+        return '<div class="diff-line" style="color: #cbd5e1;">' + esc + '</div>';
+      }).join('');
     }
 
     function closeModal() {

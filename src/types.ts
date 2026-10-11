@@ -18,6 +18,7 @@ export interface StartTaskOptions {
   cwd: string;
   mode: TaskMode;
   timeoutSecs: number;
+  onProgress?: (progress: number, total: number | undefined, message: string) => void;
 }
 
 export interface StartTaskInfo {
@@ -76,10 +77,12 @@ export interface BridgeTask {
   turns: number;
   turnHistory: TurnHistoryItem[];
   loggedOutputs: number;
+  latestActivity?: string;
   timeoutTimer: NodeJS.Timeout;
   lastActivityAt: number;
   idleTimer: NodeJS.Timeout | null;
   logListeners: Set<(event: string, data: any) => void>;
+  onProgress?: (progress: number, total: number | undefined, message: string) => void;
 }
 
 export interface ModelBridgeOptions {

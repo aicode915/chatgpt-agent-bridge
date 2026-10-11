@@ -24,6 +24,7 @@ import { spawn } from "node:child_process";
 import { ConfigManager } from "./config.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import { pickDirectoryDialog } from "./system.js";
+import { getGitDiff } from "./git.js";
 import {
   type TaskMode,
   type TaskStatus,
@@ -230,6 +231,7 @@ export class ModelBridge {
       lastActivityAt: Date.now(),
       idleTimer: null,
       logListeners: new Set(),
+      onProgress: options.onProgress,
     };
     this.tasks.set(id, task);
 
@@ -239,11 +241,24 @@ export class ModelBridge {
       task.stdout = appendCapped(task.stdout, chunk);
       teeCodexChunk(task, "stdout", chunk);
       broadcastTaskEvent(task, "log", { stream: "stdout", chunk, timestamp: Date.now() });
+
+      // Extract last non-empty line as activity summary
+      const lines = chunk.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      if (lines.length > 0) {
+        task.latestActivity = truncate(lines[lines.length - 1], 150);
+        task.onProgress?.(task.turns, undefined, `Codex: ${task.latestActivity}`);
+      }
     });
     child.stderr?.on("data", (chunk: string) => {
       task.stderr = appendCapped(task.stderr, chunk);
       teeCodexChunk(task, "stderr", chunk);
       broadcastTaskEvent(task, "log", { stream: "stderr", chunk, timestamp: Date.now() });
+
+      const lines = chunk.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      if (lines.length > 0) {
+        task.latestActivity = truncate(lines[lines.length - 1], 150);
+        task.onProgress?.(task.turns, undefined, `Codex: ${task.latestActivity}`);
+      }
     });
     child.on("error", (error) => {
       task.error = `spawn failed: ${error.message}`;
@@ -363,6 +378,7 @@ export class ModelBridge {
       mode: task.mode,
       cwd: task.cwd,
       turns: task.turns,
+      latestActivity: task.latestActivity,
       has_pending_request: Boolean(task.pending && !task.pending.answered),
       pending_turn_id: task.pending && !task.pending.answered ? task.pending.id : undefined,
       created_at: new Date(task.createdAt).toISOString(),
@@ -387,6 +403,7 @@ export class ModelBridge {
       signal: task.signal,
       error: task.error,
       turns: task.turns,
+      latestActivity: task.latestActivity,
       stdoutTail: tail(task.stdout.trim(), 10000),
       stderrTail: tail(task.stderr.trim(), 4000),
       turnHistory: task.turnHistory,
@@ -539,6 +556,25 @@ export class ModelBridge {
         const msg = this.cancel(taskCancelMatch[1]);
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ message: msg }));
+        return;
+      }
+      const taskDiffMatch = url.match(/^\/api\/tasks\/([A-Za-z0-9_]+)\/diff$/);
+      if (req.method === "GET" && taskDiffMatch) {
+        const taskId = taskDiffMatch[1];
+        const task = this.tasks.get(taskId);
+        if (!task) {
+          res.writeHead(404, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: "task not found" }));
+          return;
+        }
+        try {
+          const diffResult = await getGitDiff(task.cwd);
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify(diffResult));
+        } catch (err) {
+          res.writeHead(500, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: (err as Error).message }));
+        }
         return;
       }
       const taskStreamMatch = url.match(/^\/api\/tasks\/([A-Za-z0-9_]+)\/stream$/);

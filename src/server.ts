@@ -49,7 +49,7 @@ server.tool(
     mode: z.enum(["read-only", "workspace-write", "danger-full-access"]).optional(),
     timeout_secs: z.number().int().min(60).max(86400).default(1800),
   },
-  async ({ prompt, cwd: inputCwd, mode: inputMode, timeout_secs }) => {
+  async ({ prompt, cwd: inputCwd, mode: inputMode, timeout_secs }, extra) => {
     if (bridgeError) {
       return {
         content: [{ type: "text", text: `Model bridge unavailable: ${bridgeError}. Free the port (env BRIDGE_PORT, default 8791) and restart the MCP server.` }],
@@ -77,7 +77,40 @@ server.tool(
         };
       }
       const cwd = safeCwd(inputCwd);
-      const info = bridge.createTask({ prompt, cwd, mode: effectiveMode, timeoutSecs: timeout_secs });
+      const progressToken = (extra?._meta as any)?.progressToken;
+      const sendNotification = extra?.sendNotification;
+
+      const info = bridge.createTask({
+        prompt,
+        cwd,
+        mode: effectiveMode,
+        timeoutSecs: timeout_secs,
+        onProgress: (progress, total, message) => {
+          if (progressToken && sendNotification) {
+            sendNotification({
+              method: "notifications/progress",
+              params: {
+                progressToken,
+                progress,
+                total,
+                message,
+              },
+            }).catch(() => {});
+          }
+        },
+      });
+
+      if (progressToken && sendNotification) {
+        sendNotification({
+          method: "notifications/progress",
+          params: {
+            progressToken,
+            progress: 0,
+            message: `Codex session initialized (task ${info.taskId})`,
+          },
+        }).catch(() => {});
+      }
+
       return {
         content: [{
           type: "text",
@@ -100,9 +133,31 @@ server.tool(
   "codex_poll",
   "Fetch codex's pending model request (full conversation + tools) so you can answer it as the model, or codex's final result when it finished. If no request is pending it waits up to wait_secs. Keep calling this until status is finished/failed/cancelled.",
   { task_id: z.string().min(1), wait_secs: z.number().min(0).max(60).default(25) },
-  async ({ task_id, wait_secs }) => {
+  async ({ task_id, wait_secs }, extra) => {
     try {
+      const progressToken = (extra?._meta as any)?.progressToken;
+      const sendNotification = extra?.sendNotification;
+      if (progressToken && sendNotification) {
+        sendNotification({
+          method: "notifications/progress",
+          params: {
+            progressToken,
+            progress: 0,
+            message: `Polling codex for task ${task_id}...`,
+          },
+        }).catch(() => {});
+      }
       const result = await bridge.poll(task_id, wait_secs);
+      if (progressToken && sendNotification) {
+        sendNotification({
+          method: "notifications/progress",
+          params: {
+            progressToken,
+            progress: 1,
+            message: `Poll result: ${result.kind}`,
+          },
+        }).catch(() => {});
+      }
       return { content: [{ type: "text", text: `status: ${result.kind}\n${result.text}` }] };
     } catch (error) {
       return { content: [{ type: "text", text: `codex_poll failed: ${(error as Error).message}` }], isError: true };
@@ -114,9 +169,21 @@ server.tool(
   "codex_reply",
   "Answer codex's pending model request (you act as the model). reply must be JSON {\"items\":[...]} where each item is one of: {\"type\":\"message\",\"text\":...} / {\"type\":\"exec\",\"input\":\"<raw JS>\"} / {\"type\":\"function_call\",\"name\":...,\"namespace\":...,\"arguments\":{...}} / {\"type\":\"reasoning\",\"summary\":[...]}. Plain text is treated as one message item.",
   { task_id: z.string().min(1), turn_id: z.string().min(1), reply: z.string().min(1).max(400000) },
-  async ({ task_id, turn_id, reply }) => {
+  async ({ task_id, turn_id, reply }, extra) => {
     try {
+      const progressToken = (extra?._meta as any)?.progressToken;
+      const sendNotification = extra?.sendNotification;
       const ack = bridge.reply(task_id, turn_id, reply);
+      if (progressToken && sendNotification) {
+        sendNotification({
+          method: "notifications/progress",
+          params: {
+            progressToken,
+            progress: 1,
+            message: `Dispatched ${ack.emitted.length} action(s) to Codex: ${ack.emitted.join(", ")}`,
+          },
+        }).catch(() => {});
+      }
       return {
         content: [{
           type: "text",
@@ -138,6 +205,32 @@ server.tool(
       return { content: [{ type: "text", text: bridge.cancel(task_id) }] };
     } catch (error) {
       return { content: [{ type: "text", text: `codex_cancel failed: ${(error as Error).message}` }], isError: true };
+    }
+  },
+);
+
+server.tool(
+  "codex_diff",
+  "View Git Diff (file changes and unstaged/staged diff) for a task's workspace directory.",
+  { task_id: z.string().min(1) },
+  async ({ task_id }) => {
+    try {
+      const task = (bridge as any).tasks?.get(task_id);
+      if (!task) {
+        return { content: [{ type: "text", text: `Error: Task '${task_id}' not found` }], isError: true };
+      }
+      const { getGitDiff } = await import("./git.js");
+      const diffResult = await getGitDiff(task.cwd);
+      return {
+        content: [{
+          type: "text",
+          text: diffResult.hasChanges
+            ? `Git status: ${diffResult.files.length} changed file(s), ${diffResult.untracked.length} untracked file(s)\n\nStat summary:\n${diffResult.stat || "(no stat)"}\n\nDiff:\n${diffResult.diff || "(untracked files only)"}`
+            : "No changes detected in git workspace (clean work tree).",
+        }],
+      };
+    } catch (error) {
+      return { content: [{ type: "text", text: `codex_diff failed: ${(error as Error).message}` }], isError: true };
     }
   },
 );

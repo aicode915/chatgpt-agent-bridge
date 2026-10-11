@@ -229,11 +229,11 @@ On macOS, Codex CLI uses Apple Seatbelt sandboxing. Under the default `workspace
 For comprehensive product roadmap and UX optimization proposals, please refer to the dedicated document: 👉 [**OPTIMIZATIONS.md**](./OPTIMIZATIONS.md).
 
 Key roadmap directions:
-- [ ] **Zero-Friction Prompting**: Dedicated Custom GPT / Custom Instructions setup to eliminate prompt copy-pasting;
-- [ ] **Streamlined CLI Packaging**: Distribute via npm (`npx chatgpt-agent-bridge`) with an interactive setup wizard;
-- [ ] **Web Dashboard Diff Viewer**: Real-time visual Git Diff rendering after coding tasks finish;
+- [x] **Zero-Friction Prompting**: Dedicated Custom GPT / Custom Instructions setup to eliminate prompt copy-pasting;
+- [x] **Streamlined CLI Packaging**: Distribute via npm (`npx chatgpt-agent-bridge`) with an interactive setup wizard;
+- [x] **Web Dashboard Diff Viewer**: Real-time visual Git Diff rendering after coding tasks finish;
+- [x] **Real-time MCP Progress Notifications**: Stream sub-command status back to ChatGPT UI via `notifications/progress`;
 - [ ] **Controlled Network Allowlist**: Allow outbound traffic to trusted domains (e.g. `github.com`) while preserving sandbox boundaries;
-- [ ] **Real-time MCP Progress Notifications**: Stream sub-command status back to ChatGPT UI via `notifications/progress`;
 - [ ] **Multi-turn Error Self-Healing & Concurrency Isolation**: Enhanced prompt diagnostics and per-task isolated workspaces.
 
 ---
