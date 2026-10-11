@@ -1,10 +1,10 @@
 {
   "name": "chatgpt-agent-bridge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bridge ChatGPT with local OpenAI Codex CLI via MCP and secure outbound tunnel - zero quota, full interactive agent.",
   "type": "module",
   "bin": {
-    "chatgpt-agent-bridge": "./dist/cli.js"
+    "chatgpt-agent-bridge": "dist/cli.js"
   },
   "main": "./dist/server.js",
   "files": [
@@ -37,7 +37,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aicode915/chatgpt-agent-bridge.git"
+    "url": "git+https://github.com/aicode915/chatgpt-agent-bridge.git"
   },
   "bugs": {
     "url": "https://github.com/aicode915/chatgpt-agent-bridge/issues"
