@@ -340,6 +340,112 @@ async function openDashboardWhenReady(port: number | string): Promise<void> {
   openBrowser(url);
 }
 
+function setupLogFilterAndForward(
+  child: ReturnType<typeof spawn>,
+  port: number | string,
+  verbose: boolean
+): void {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const getTs = () => {
+    const d = new Date();
+    return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  };
+
+  const forwardLog = (
+    level: "info" | "warn" | "error",
+    source: "tunnel" | "bridge" | "codex" | "system",
+    message: string
+  ) => {
+    fetch(`http://127.0.0.1:${port}/api/system/logs`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ level, source, message }),
+    }).catch(() => {});
+  };
+
+  let connectedReported = false;
+
+  const handleLine = (rawLine: string, fromStderr = false) => {
+    const line = rawLine.trim();
+    if (!line) return;
+
+    if (verbose) {
+      console.log(`[debug] ${line}`);
+    }
+
+    // 1. JSON 结构化日志 (来源于 tunnel-client)
+    if (line.startsWith("{") && line.endsWith("}")) {
+      try {
+        const json = JSON.parse(line);
+        const msg = json.msg || "";
+        const levelRaw = (json.level || "INFO").toUpperCase();
+        const level: "info" | "warn" | "error" =
+          levelRaw === "ERROR" || levelRaw === "FATAL" ? "error" : levelRaw === "WARN" ? "warn" : "info";
+
+        forwardLog(level, "tunnel", `${levelRaw}: ${msg}${json.reason ? ` (${json.reason})` : ""}`);
+
+        // 终端过滤：仅展示用户关心的关键状态变化，过滤底层轮询与心跳
+        if (msg.includes("starting tunnel client")) {
+          console.log(`[${getTs()}] ⏳ [tunnel] 正在启动 OpenAI MCP 隧道...`);
+        } else if (
+          msg.includes("poller started") ||
+          msg.includes("host registration successful") ||
+          msg.includes("tunnel client started")
+        ) {
+          if (!connectedReported) {
+            connectedReported = true;
+            console.log(`[${getTs()}] 🟢 [tunnel] 隧道已成功连接，就绪等待 ChatGPT 指令`);
+          }
+        } else if (level === "error") {
+          console.error(`[${getTs()}] ❌ [tunnel] 错误: ${msg}`);
+        } else if (level === "warn" && !msg.includes("digest") && !msg.includes("harpoon")) {
+          console.warn(`[${getTs()}] ⚠️ [tunnel] 警告: ${msg}`);
+        }
+        return;
+      } catch {}
+    }
+
+    // 2. 服务端 / Bridge 输出
+    if (line.includes("[bridge") || line.includes("[server")) {
+      const cleanLine = line.replace(/^\[(bridge|server)[^\]]*\]\s*/, "");
+      if (line.includes("task t_") && line.includes("created")) {
+        console.log(`[${getTs()}] 🚀 [task] ${cleanLine}`);
+        forwardLog("info", "codex", cleanLine);
+      } else if (line.includes("task t_") && line.includes("Turn #")) {
+        console.log(`[${getTs()}] 💬 [task] ${cleanLine}`);
+        forwardLog("info", "bridge", cleanLine);
+      } else if (line.includes("task t_") && line.includes("ended status:")) {
+        console.log(`[${getTs()}] ✓ [task] ${cleanLine}`);
+        forwardLog("info", "codex", cleanLine);
+      } else if (line.includes("model bridge ready") || line.includes("listening on")) {
+        console.log(`[${getTs()}] 🌐 [bridge] 虚拟模型端点已就绪: http://127.0.0.1:${port}`);
+        forwardLog("info", "bridge", cleanLine);
+      } else {
+        forwardLog("info", "bridge", cleanLine);
+        if (verbose) {
+          console.log(`[${getTs()}] ${line}`);
+        }
+      }
+      return;
+    }
+
+    // 3. 其他系统输出
+    forwardLog(fromStderr ? "warn" : "info", "system", line);
+    if (verbose) {
+      console.log(`[${getTs()}] ${line}`);
+    }
+  };
+
+  if (child.stdout) {
+    const rlOut = readline.createInterface({ input: child.stdout });
+    rlOut.on("line", (l) => handleLine(l, false));
+  }
+  if (child.stderr) {
+    const rlErr = readline.createInterface({ input: child.stderr });
+    rlErr.on("line", (l) => handleLine(l, true));
+  }
+}
+
 function printHelp(): void {
   const version = getVersion();
   console.log(`
@@ -362,6 +468,7 @@ ChatGPT Agent Bridge v${version}
   -w, --workspace <dir>  添加/激活指定的工作区目录 (默认: 当前目录)
   -c, --config <file>    指定 bridge-config.json 配置文件路径
   --no-open              启动后不自动在默认浏览器中打开控制台
+  --verbose              在终端输出底层原始调试日志
   -v, --version          查看当前版本
   -h, --help             查看帮助信息
 
@@ -473,6 +580,7 @@ async function main(): Promise<void> {
 
   const restartRequested = args.includes("-r") || args.includes("--restart");
   const noOpen = args.includes("--no-open");
+  const isVerbose = args.includes("--verbose") || process.env.VERBOSE === "1";
   const runningPids = getTunnelPids();
 
   if (runningPids.length > 0) {
@@ -512,7 +620,7 @@ async function main(): Promise<void> {
   console.log("==================================================================\n");
 
   const child = spawn("tunnel-client", ["run", "--profile", PROFILE], {
-    stdio: "inherit",
+    stdio: ["inherit", "pipe", "pipe"],
     env: {
       ...process.env,
       CONTROL_PLANE_TUNNEL_ID: tunnelId,
@@ -520,6 +628,8 @@ async function main(): Promise<void> {
       BRIDGE_PORT: String(port),
     },
   });
+
+  setupLogFilterAndForward(child, port, isVerbose);
 
   if (!noOpen) {
     void openDashboardWhenReady(port);

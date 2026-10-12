@@ -73,7 +73,22 @@ const DEFAULT_PORT = 8791;
 const DEFAULT_IDLE_TURN_TIMEOUT_SECS = 60;
 const IDLE_TURN_TIMEOUT_MS = Number(process.env.TURN_IDLE_TIMEOUT_SECS ?? DEFAULT_IDLE_TURN_TIMEOUT_SECS) * 1000;
 
-const log = (message: string) => console.error(`[bridge] ${message}`);
+export interface SystemLogEntry {
+  id: number;
+  time: string;
+  level: "info" | "warn" | "error";
+  source: "tunnel" | "bridge" | "codex" | "system";
+  message: string;
+}
+
+let activeBridgeInstance: ModelBridge | null = null;
+
+const log = (message: string) => {
+  console.error(`[bridge] ${message}`);
+  if (activeBridgeInstance) {
+    activeBridgeInstance.addSystemLog({ level: "info", source: "bridge", message });
+  }
+};
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 function broadcastTaskEvent(task: BridgeTask, event: string, data: any): void {
@@ -130,11 +145,45 @@ export class ModelBridge {
   readonly configManager: ConfigManager;
   private tasks = new Map<string, BridgeTask>();
   private server: http.Server | null = null;
+  private systemLogs: SystemLogEntry[] = [];
+  private systemLogNextId = 1;
+  private systemLogListeners = new Set<(entry: SystemLogEntry) => void>();
 
   constructor(options?: ModelBridgeOptions) {
     this.port = options?.port ?? Number(process.env.BRIDGE_PORT ?? DEFAULT_PORT);
     this.idleTimeoutMs = (options?.turnIdleTimeoutSecs ?? Number(process.env.TURN_IDLE_TIMEOUT_SECS ?? DEFAULT_IDLE_TURN_TIMEOUT_SECS)) * 1000;
     this.configManager = options?.configManager ?? new ConfigManager();
+  }
+
+  addSystemLog(entry: { level?: "info" | "warn" | "error"; source?: "tunnel" | "bridge" | "codex" | "system"; message: string; time?: string }): SystemLogEntry {
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const now = new Date();
+    const defaultTime = `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    const item: SystemLogEntry = {
+      id: this.systemLogNextId++,
+      time: entry.time || defaultTime,
+      level: entry.level || "info",
+      source: entry.source || "bridge",
+      message: entry.message,
+    };
+    this.systemLogs.push(item);
+    if (this.systemLogs.length > 1000) {
+      this.systemLogs.shift();
+    }
+    for (const listener of this.systemLogListeners) {
+      try {
+        listener(item);
+      } catch {}
+    }
+    return item;
+  }
+
+  getSystemLogs(limit = 300): SystemLogEntry[] {
+    return this.systemLogs.slice(-limit);
+  }
+
+  clearSystemLogs(): void {
+    this.systemLogs = [];
   }
 
   get started(): boolean {
@@ -146,6 +195,7 @@ export class ModelBridge {
   }
 
   async start(): Promise<number> {
+    activeBridgeInstance = this;
     if (this.server) return this.port;
     const server = http.createServer((req, res) => {
       void this.handleHttp(req, res);
@@ -778,6 +828,67 @@ export class ModelBridge {
           res.writeHead(500, { "content-type": "application/json" });
           res.end(JSON.stringify({ error: (err as Error).message }));
         }
+        return;
+      }
+      if (req.method === "GET" && url.startsWith("/api/system/logs") && !url.includes("/stream")) {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ logs: this.systemLogs.slice(-300) }));
+        return;
+      }
+      if (req.method === "POST" && url === "/api/system/logs") {
+        const raw = await readBody(req);
+        try {
+          const body = JSON.parse(raw.toString("utf8"));
+          if (Array.isArray(body)) {
+            for (const item of body) this.addSystemLog(item);
+          } else {
+            this.addSystemLog(body);
+          }
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ success: true }));
+        } catch (err) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: (err as Error).message }));
+        }
+        return;
+      }
+      if (req.method === "POST" && url === "/api/system/logs/clear") {
+        this.clearSystemLogs();
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ success: true }));
+        return;
+      }
+      if (req.method === "GET" && url === "/api/system/logs/stream") {
+        res.writeHead(200, {
+          "content-type": "text/event-stream",
+          "cache-control": "no-cache",
+          "connection": "keep-alive",
+          "x-accel-buffering": "no",
+        });
+
+        res.write(`event: init\ndata: ${JSON.stringify({ logs: this.systemLogs.slice(-200) })}\n\n`);
+
+        const listener = (entry: SystemLogEntry) => {
+          try {
+            res.write(`event: log\ndata: ${JSON.stringify(entry)}\n\n`);
+          } catch {}
+        };
+
+        this.systemLogListeners.add(listener);
+
+        const keepalive = setInterval(() => {
+          try {
+            res.write(`: ping\n\n`);
+          } catch {
+            clearInterval(keepalive);
+            this.systemLogListeners.delete(listener);
+          }
+        }, 15000);
+
+        req.on("close", () => {
+          clearInterval(keepalive);
+          this.systemLogListeners.delete(listener);
+        });
         return;
       }
       if (req.method === "GET" && url === "/api/tunnel/health") {
