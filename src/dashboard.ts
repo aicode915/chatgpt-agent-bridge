@@ -1131,7 +1131,8 @@ export function renderDashboardHtml(): string {
         : '- 修改文件/本地测试/本地 commit：mode="workspace-write"\\n   - 只读查看：mode="read-only"';
 
       const cwdVal = cfg.activeWorkspace ? cfg.activeWorkspace : '<请在控制台添加并设置工作目录>';
-      const promptText = \`你是驱动本机 Codex 的“模型”。流程：
+      const promptText = \`你是驱动本机 Codex 的“模型”。随时可用 codex_status() 查询工作区状态与安全锁策略；若未配置工作区目录，请先告知用户前往 Web 控制台选定项目目录。
+流程：
 1) 需要执行本机编码任务时调用 codex_start(prompt, cwd="\${cwdVal}", mode)（当前安全锁最高模式: \${cfg.maxAllowedMode}）。
    \${modeHint}
 2) 循环：调用 codex_poll(task_id, wait_secs≈25)：

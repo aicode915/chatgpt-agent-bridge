@@ -244,5 +244,30 @@ server.tool(
   }),
 );
 
+server.tool(
+  "codex_status",
+  "Check bridge status: active workspace directory, allowed workspaces whitelist, security mode, and whether a project directory is configured.",
+  {},
+  async () => {
+    const cfg = configManager.get();
+    const isConfigured = Boolean(cfg.activeWorkspace);
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({
+          isWorkspaceConfigured: isConfigured,
+          activeWorkspace: cfg.activeWorkspace || null,
+          allowedWorkspaces: cfg.allowedWorkspaces,
+          maxAllowedMode: cfg.maxAllowedMode,
+          dashboardUrl: `http://127.0.0.1:${bridge.port}`,
+          message: isConfigured
+            ? `当前默认工作区为: ${cfg.activeWorkspace} (权限模式: ${cfg.maxAllowedMode})`
+            : `未配置有效的工作区目录。请先在 Web 控制台 (http://127.0.0.1:${bridge.port}) 的“项目目录管理”中点击【📁 选择本地目录】添加并设置默认项目。`,
+        }, null, 2),
+      }],
+    };
+  },
+);
+
 const transport = new StdioServerTransport();
 await server.connect(transport);
