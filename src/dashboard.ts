@@ -1,15 +1,17 @@
+import { getVersion } from "./system.js";
+
 /**
  * Embedded Web Dashboard HTML Generator
  * Standalone, zero external dependencies, responsive modern dark UI
  */
 
-export function renderDashboardHtml(): string {
+export function renderDashboardHtml(version = getVersion()): string {
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ChatGPT Agent Bridge Dashboard</title>
+  <title>ChatGPT Agent Bridge Dashboard (v${version})</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -58,6 +60,19 @@ export function renderDashboardHtml(): string {
       border-radius: 999px;
       background: rgba(255, 255, 255, 0.08);
       border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .badge-version {
+      display: inline-flex;
+      align-items: center;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 999px;
+      color: var(--primary);
+      background: rgba(56, 189, 248, 0.12);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      line-height: 1.4;
+      letter-spacing: 0.3px;
     }
     .badge-dot { width: 8px; height: 8px; border-radius: 50%; }
     .dot-online { background-color: var(--success); box-shadow: 0 0 8px var(--success); }
@@ -289,7 +304,10 @@ export function renderDashboardHtml(): string {
     <header>
       <div class="brand">
         <div>
-          <h1>ChatGPT Agent Bridge</h1>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <h1>ChatGPT Agent Bridge</h1>
+            <span class="badge-version" id="hdr-version">v${version}</span>
+          </div>
           <span>虚拟模型端点与 Codex 调度控制台</span>
         </div>
       </div>
@@ -488,12 +506,17 @@ export function renderDashboardHtml(): string {
           <div class="card-title">环境与版本信息</div>
         </div>
         <div style="font-size: 13px; line-height: 2;">
+          <div>• <strong>ChatGPT Agent Bridge</strong>: <code id="sys-bridge-version">v${version}</code></div>
           <div>• <strong>Codex CLI</strong>: <code>>= 0.161.0</code> (OpenAI Responses API)</div>
           <div>• <strong>Node.js</strong>: <span id="sys-node-version">--</span></div>
           <div>• <strong>配置文件路径</strong>: <span id="sys-config-path">bridge-config.json</span></div>
         </div>
       </div>
     </div>
+
+    <footer style="margin-top: 32px; padding-top: 16px; border-top: 1px solid var(--card-border); text-align: center; font-size: 12px; color: var(--text-muted);">
+      ChatGPT Agent Bridge <span id="footer-version">v${version}</span> • 虚拟模型端点与 Codex 调度控制台
+    </footer>
   </div>
 
   <!-- Task Detail Modal -->
@@ -677,6 +700,17 @@ export function renderDashboardHtml(): string {
       document.getElementById('stat-workspace').innerText = data.config.activeWorkspace || '未设置 (请添加目录)';
       document.getElementById('sys-node-version').innerText = data.system.nodeVersion;
       document.getElementById('sys-config-path').innerText = data.config.configPath;
+
+      const ver = data.bridge?.version || data.system?.version;
+      if (ver) {
+        const formattedVer = 'v' + ver.replace(/^v/, '');
+        const hdrVer = document.getElementById('hdr-version');
+        if (hdrVer) hdrVer.innerText = formattedVer;
+        const sysVer = document.getElementById('sys-bridge-version');
+        if (sysVer) sysVer.innerText = formattedVer;
+        const footerVer = document.getElementById('footer-version');
+        if (footerVer) footerVer.innerText = formattedVer;
+      }
 
       const dot = document.getElementById('dot-tunnel');
       const hdrTunnel = document.getElementById('hdr-tunnel');

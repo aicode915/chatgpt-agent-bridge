@@ -1,25 +1,10 @@
-import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { ModelBridge } from "./bridge.js";
 import { ConfigManager } from "./config.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-function getVersion(): string {
-  try {
-    const pkgPath = path.resolve(__dirname, "..", "package.json");
-    if (fs.existsSync(pkgPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { version?: string };
-      return pkg.version ?? "0.1.0";
-    }
-  } catch {}
-  return "0.1.0";
-}
+import { getVersion } from "./system.js";
 
 const configManager = new ConfigManager();
 

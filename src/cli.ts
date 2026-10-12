@@ -6,23 +6,13 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { ConfigManager } from "./config.js";
+import { getVersion } from "./system.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PROFILE = "chatgpt-agent-bridge";
 const DEFAULT_PORT = 8791;
-
-function getVersion(): string {
-  try {
-    const pkgPath = path.resolve(__dirname, "..", "package.json");
-    if (fs.existsSync(pkgPath)) {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { version?: string };
-      return pkg.version ?? "0.1.0";
-    }
-  } catch {}
-  return "0.1.0";
-}
 
 function checkCommand(cmd: string): boolean {
   try {

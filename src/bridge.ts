@@ -23,7 +23,7 @@ import http from "node:http";
 import { spawn } from "node:child_process";
 import { ConfigManager } from "./config.js";
 import { renderDashboardHtml } from "./dashboard.js";
-import { pickDirectoryDialog } from "./system.js";
+import { getVersion, pickDirectoryDialog } from "./system.js";
 import { getGitDiff } from "./git.js";
 import {
   type TaskMode,
@@ -522,14 +522,15 @@ export class ModelBridge {
       }
       if (req.method === "GET" && url === "/api/status") {
         const tunnelHealthy = await this.checkTunnelHealth();
+        const currentVersion = getVersion();
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({
-          bridge: { port: this.port, started: this.started },
+          bridge: { port: this.port, started: this.started, version: currentVersion },
           config: {
             ...this.configManager.get(),
             configPath: this.configManager.configPath,
           },
-          system: { nodeVersion: process.version, platform: process.platform },
+          system: { version: currentVersion, nodeVersion: process.version, platform: process.platform },
           tunnel: { healthy: tunnelHealthy },
         }));
         return;

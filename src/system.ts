@@ -1,5 +1,26 @@
 import { execFile } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export function getVersion(): string {
+  try {
+    let curr = __dirname;
+    for (let i = 0; i < 3; i++) {
+      const pkgPath = path.resolve(curr, "package.json");
+      if (fs.existsSync(pkgPath)) {
+        const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8")) as { version?: string };
+        if (pkg.version) return pkg.version;
+      }
+      curr = path.resolve(curr, "..");
+    }
+  } catch {}
+  return "0.1.0";
+}
 
 const execFileAsync = promisify(execFile);
 
