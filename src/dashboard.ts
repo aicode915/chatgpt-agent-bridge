@@ -166,7 +166,7 @@ export function renderDashboardHtml(version = getVersion()): string {
     .btn-secondary:hover { background: rgba(255, 255, 255, 0.18); }
     .btn-sm { padding: 4px 8px; font-size: 12px; }
 
-    input[type="text"] {
+    input[type="text"], input[type="password"] {
       width: 100%;
       padding: 10px 14px;
       background: var(--code-bg);
@@ -176,7 +176,7 @@ export function renderDashboardHtml(version = getVersion()): string {
       font-size: 14px;
       outline: none;
     }
-    input[type="text"]:focus { border-color: var(--primary); }
+    input[type="text"]:focus, input[type="password"]:focus { border-color: var(--primary); }
 
     /* Radio Cards */
     .radio-card-group { display: flex; flex-direction: column; gap: 12px; }
@@ -339,11 +339,12 @@ export function renderDashboardHtml(version = getVersion()): string {
     </div>
 
     <div class="tabs">
-      <button class="tab-btn active" onclick="switchTab('tasks')">📋 会话与任务监控</button>
-      <button class="tab-btn" onclick="switchTab('security')">🛡️ 安全策略与权限锁</button>
-      <button class="tab-btn" onclick="switchTab('workspaces')">📁 项目目录管理</button>
-      <button class="tab-btn" onclick="switchTab('prompt')">⚡ ChatGPT 提示词助手</button>
-      <button class="tab-btn" onclick="switchTab('system')">🔌 隧道与系统看板</button>
+      <button class="tab-btn active" data-tab="tasks" onclick="switchTab('tasks')">📋 会话与任务监控</button>
+      <button class="tab-btn" data-tab="security" onclick="switchTab('security')">🛡️ 安全策略与权限锁</button>
+      <button class="tab-btn" data-tab="workspaces" onclick="switchTab('workspaces')">📁 项目目录管理</button>
+      <button class="tab-btn" data-tab="credentials" onclick="switchTab('credentials')">🔑 凭证管理 (Credentials)</button>
+      <button class="tab-btn" data-tab="prompt" onclick="switchTab('prompt')">⚡ ChatGPT 提示词助手</button>
+      <button class="tab-btn" data-tab="system" onclick="switchTab('system')">🔌 隧道与系统看板</button>
     </div>
 
     <!-- TAB 1: 会话与任务 -->
@@ -455,7 +456,68 @@ export function renderDashboardHtml(version = getVersion()): string {
       </div>
     </div>
 
-    <!-- TAB 4: 提示词助手 -->
+    <!-- TAB 4: 凭证管理 -->
+    <div id="tab-credentials" class="tab-pane">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">OpenAI 隧道与运行时凭证配置</div>
+          <button class="btn btn-secondary btn-sm" onclick="fetchCredentials()">重新加载</button>
+        </div>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+          在此修改 OpenAI Secure MCP 隧道所需的 <strong>Tunnel ID</strong> 与 <strong>运行时 API Key</strong>。保存后将自动持久化至本地 <code>.env</code> 文件并重新同步 <code>tunnel-client</code> 本地配置。
+        </p>
+
+        <div style="background: rgba(0, 0, 0, 0.25); border: 1px solid var(--card-border); border-radius: 8px; padding: 12px 16px; margin-bottom: 20px; font-size: 13px;">
+          <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap;">
+            <span style="color: var(--text-muted);">📄 当前凭证存储文件:</span>
+            <code id="cred-file-path" style="color: var(--primary); font-weight: 600;">加载中...</code>
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted);">
+            💡 提示：若首次配置输错密钥，可在此直接修改并点击【保存并重启隧道】，无需进入命令行手动编辑文件。
+          </div>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px; max-width: 680px;">
+          <div>
+            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">
+              OpenAI Tunnel ID (隧道 ID) <span style="color: var(--danger);">*</span>
+            </label>
+            <input type="text" id="input-tunnel-id" placeholder="例如: tunnel_69b828dca80c819199d905a81" style="width: 100%;" />
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+              可在 <a href="https://platform.openai.com/settings/organization/tunnels" target="_blank" style="color: var(--primary); text-decoration: none;">OpenAI 平台 &gt; Organization Settings &gt; Tunnels</a> 创建或复制。
+            </div>
+          </div>
+
+          <div>
+            <label style="display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px;">
+              OpenAI Runtime API Key (运行时密钥) <span style="color: var(--danger);">*</span>
+            </label>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="password" id="input-api-key" placeholder="例如: sk-proj-..." style="flex: 1;" />
+              <button class="btn btn-secondary" type="button" id="btn-toggle-key" onclick="toggleApiKeyVisibility()" style="white-space: nowrap;">
+                👁️ 显示
+              </button>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+              可在 <a href="https://platform.openai.com/settings/organization/api-keys" target="_blank" style="color: var(--primary); text-decoration: none;">OpenAI 平台 &gt; API Keys</a> 生成（需有 Model Responses 权限）。
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap;">
+            <button class="btn btn-primary" id="btn-save-restart-creds" onclick="saveCredentials(true)">
+              💾 保存并重启隧道 (立即生效)
+            </button>
+            <button class="btn btn-secondary" id="btn-save-only-creds" onclick="saveCredentials(false)">
+              仅保存凭证
+            </button>
+          </div>
+
+          <div id="cred-save-status" style="display: none; padding: 10px 14px; border-radius: 6px; font-size: 13px; margin-top: 8px;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: 提示词助手 -->
     <div id="tab-prompt" class="tab-pane">
       <!-- 推荐用法：自定义指令 -->
       <div class="card" style="border-left: 4px solid var(--success);">
@@ -485,7 +547,7 @@ export function renderDashboardHtml(version = getVersion()): string {
       </div>
     </div>
 
-    <!-- TAB 5: 隧道与系统看板 -->
+    <!-- TAB 6: 隧道与系统看板 -->
     <div id="tab-system" class="tab-pane">
       <div class="card">
         <div class="card-header">
@@ -507,6 +569,8 @@ export function renderDashboardHtml(version = getVersion()): string {
         </div>
         <div style="font-size: 13px; line-height: 2;">
           <div>• <strong>ChatGPT Agent Bridge</strong>: <code id="sys-bridge-version">v${version}</code></div>
+          <div>• <strong>当前隧道 ID</strong>: <code id="sys-tunnel-id">--</code></div>
+          <div>• <strong>凭证存储路径</strong>: <span id="sys-cred-source">--</span> (<a href="javascript:void(0)" onclick="switchTab('credentials')" style="color: var(--primary); text-decoration: none;">前往修改</a>)</div>
           <div>• <strong>Codex CLI</strong>: <code>>= 0.161.0</code> (OpenAI Responses API)</div>
           <div>• <strong>Node.js</strong>: <span id="sys-node-version">--</span></div>
           <div>• <strong>配置文件路径</strong>: <span id="sys-config-path">bridge-config.json</span></div>
@@ -662,8 +726,17 @@ export function renderDashboardHtml(version = getVersion()): string {
     function switchTab(name) {
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-      event.target.classList.add('active');
-      document.getElementById('tab-' + name).classList.add('active');
+      const activeBtn = document.querySelector('.tab-btn[data-tab="' + name + '"]');
+      if (activeBtn) {
+        activeBtn.classList.add('active');
+      } else if (typeof event !== 'undefined' && event && event.target && event.target.classList.contains('tab-btn')) {
+        event.target.classList.add('active');
+      }
+      const pane = document.getElementById('tab-' + name);
+      if (pane) pane.classList.add('active');
+      if (name === 'credentials') {
+        fetchCredentials();
+      }
     }
 
     async function fetchStatus() {
@@ -700,6 +773,13 @@ export function renderDashboardHtml(version = getVersion()): string {
       document.getElementById('stat-workspace').innerText = data.config.activeWorkspace || '未设置 (请添加目录)';
       document.getElementById('sys-node-version').innerText = data.system.nodeVersion;
       document.getElementById('sys-config-path').innerText = data.config.configPath;
+
+      if (data.credentials) {
+        const sysTunnelId = document.getElementById('sys-tunnel-id');
+        if (sysTunnelId) sysTunnelId.innerText = data.credentials.tunnelId || '未配置';
+        const sysCredSource = document.getElementById('sys-cred-source');
+        if (sysCredSource) sysCredSource.innerText = data.credentials.source || '未检测到';
+      }
 
       const ver = data.bridge?.version || data.system?.version;
       if (ver) {
@@ -1214,9 +1294,129 @@ export function renderDashboardHtml(version = getVersion()): string {
       }
     }
 
+    async function fetchCredentials() {
+      try {
+        const res = await fetch('/api/config/credentials');
+        const data = await res.json();
+        const inputTunnel = document.getElementById('input-tunnel-id');
+        const inputKey = document.getElementById('input-api-key');
+        const credPath = document.getElementById('cred-file-path');
+        if (inputTunnel) inputTunnel.value = data.tunnelId || '';
+        if (inputKey) inputKey.value = data.apiKey || '';
+        if (credPath) credPath.innerText = data.targetEnvPath || data.source || '未检测到';
+        const sysTunnelId = document.getElementById('sys-tunnel-id');
+        if (sysTunnelId) sysTunnelId.innerText = data.tunnelId || '未配置';
+        const sysCredSource = document.getElementById('sys-cred-source');
+        if (sysCredSource) sysCredSource.innerText = data.source || '未检测到';
+      } catch (err) {
+        console.error('Fetch credentials failed', err);
+      }
+    }
+
+    function toggleApiKeyVisibility() {
+      const input = document.getElementById('input-api-key');
+      const btn = document.getElementById('btn-toggle-key');
+      if (!input || !btn) return;
+      if (input.type === 'password') {
+        input.type = 'text';
+        btn.innerText = '🙈 隐藏';
+      } else {
+        input.type = 'password';
+        btn.innerText = '👁️ 显示';
+      }
+    }
+
+    async function saveCredentials(restart) {
+      const inputTunnel = document.getElementById('input-tunnel-id');
+      const inputKey = document.getElementById('input-api-key');
+      const statusBox = document.getElementById('cred-save-status');
+
+      const tunnelId = inputTunnel ? inputTunnel.value.trim() : '';
+      const apiKey = inputKey ? inputKey.value.trim() : '';
+
+      if (!tunnelId) {
+        alert('Tunnel ID 不能为空');
+        return;
+      }
+      if (!apiKey) {
+        alert('API Key 不能为空');
+        return;
+      }
+
+      if (statusBox) {
+        statusBox.style.display = 'block';
+        statusBox.style.background = 'rgba(56, 189, 248, 0.15)';
+        statusBox.style.color = 'var(--primary)';
+        statusBox.style.border = '1px solid rgba(56, 189, 248, 0.3)';
+        statusBox.innerText = restart ? '⏳ 正在保存凭证并触发隧道重启，请稍候...' : '⏳ 正在保存凭证...';
+      }
+
+      try {
+        const res = await fetch('/api/config/credentials', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tunnelId, apiKey, restart }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.error || '保存失败');
+        }
+
+        if (restart) {
+          if (statusBox) {
+            statusBox.innerText = '✓ 凭证已保存，隧道服务正在重启，请稍候约 3 秒...';
+          }
+          showToast('凭证已保存，隧道重启中');
+          let attempts = 0;
+          const pollTimer = setInterval(async () => {
+            attempts++;
+            try {
+              const hRes = await fetch('/api/tunnel/health');
+              const hData = await hRes.json();
+              if (hData.healthy || attempts >= 8) {
+                clearInterval(pollTimer);
+                if (statusBox) {
+                  statusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+                  statusBox.style.color = 'var(--success)';
+                  statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+                  statusBox.innerText = '✓ 凭证已成功保存，隧道服务已重新上线运行！';
+                }
+                fetchStatus();
+                fetchCredentials();
+              }
+            } catch {
+              if (attempts >= 8) {
+                clearInterval(pollTimer);
+                fetchStatus();
+                fetchCredentials();
+              }
+            }
+          }, 1500);
+        } else {
+          if (statusBox) {
+            statusBox.style.background = 'rgba(16, 185, 129, 0.15)';
+            statusBox.style.color = 'var(--success)';
+            statusBox.style.border = '1px solid rgba(16, 185, 129, 0.3)';
+            statusBox.innerText = '✓ 凭证已成功保存至 ' + (data.targetEnvPath || '配置文件') + '。';
+          }
+          showToast('凭证保存成功');
+          fetchStatus();
+          fetchCredentials();
+        }
+      } catch (err) {
+        if (statusBox) {
+          statusBox.style.background = 'rgba(239, 68, 68, 0.15)';
+          statusBox.style.color = 'var(--danger)';
+          statusBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+          statusBox.innerText = '✗ 保存失败: ' + err.message;
+        }
+      }
+    }
+
     // Init and auto polling
     fetchStatus();
     fetchTasks();
+    fetchCredentials();
     setInterval(() => {
       fetchTasks();
     }, 2000);

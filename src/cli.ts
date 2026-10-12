@@ -6,7 +6,8 @@ import path from "node:path";
 import readline from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import { ConfigManager } from "./config.js";
-import { getVersion } from "./system.js";
+import { getVersion, openBrowser } from "./system.js";
+import { loadCredentials, saveCredentials, initTunnelProfile, type CredentialsData } from "./credentials.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -218,68 +219,11 @@ async function stopTunnel(): Promise<void> {
   }
 }
 
-function parseEnvFile(filePath: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  if (!fs.existsSync(filePath)) return result;
-  try {
-    const content = fs.readFileSync(filePath, "utf8");
-    for (const line of content.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith("#")) continue;
-      const eqIdx = trimmed.indexOf("=");
-      if (eqIdx > 0) {
-        const key = trimmed.slice(0, eqIdx).trim();
-        let val = trimmed.slice(eqIdx + 1).trim();
-        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
-          val = val.slice(1, -1);
-        }
-        result[key] = val;
-      }
-    }
-  } catch {}
-  return result;
-}
-
-function loadCredentials(): { tunnelId?: string; apiKey?: string; source?: string } {
-  let tunnelId = process.env.CONTROL_PLANE_TUNNEL_ID;
-  let apiKey = process.env.CONTROL_PLANE_API_KEY;
-  let source = "process.env";
-
-  const localEnvPath = path.resolve(process.cwd(), ".env");
-  if ((!tunnelId || !apiKey) && fs.existsSync(localEnvPath)) {
-    const parsed = parseEnvFile(localEnvPath);
-    if (!tunnelId && parsed.CONTROL_PLANE_TUNNEL_ID) {
-      tunnelId = parsed.CONTROL_PLANE_TUNNEL_ID;
-      process.env.CONTROL_PLANE_TUNNEL_ID = tunnelId;
-    }
-    if (!apiKey && parsed.CONTROL_PLANE_API_KEY) {
-      apiKey = parsed.CONTROL_PLANE_API_KEY;
-      process.env.CONTROL_PLANE_API_KEY = apiKey;
-    }
-    source = localEnvPath;
-  }
-
-  const globalEnvPath = path.join(os.homedir(), ".config", "chatgpt-agent-bridge", ".env");
-  if ((!tunnelId || !apiKey) && fs.existsSync(globalEnvPath)) {
-    const parsed = parseEnvFile(globalEnvPath);
-    if (!tunnelId && parsed.CONTROL_PLANE_TUNNEL_ID) {
-      tunnelId = parsed.CONTROL_PLANE_TUNNEL_ID;
-      process.env.CONTROL_PLANE_TUNNEL_ID = tunnelId;
-    }
-    if (!apiKey && parsed.CONTROL_PLANE_API_KEY) {
-      apiKey = parsed.CONTROL_PLANE_API_KEY;
-      process.env.CONTROL_PLANE_API_KEY = apiKey;
-    }
-    source = globalEnvPath;
-  }
-
-  return { tunnelId, apiKey, source };
-}
 
 async function runSetupWizard(
   configManager: ConfigManager,
   existingCreds?: { tunnelId?: string; apiKey?: string }
-): Promise<{ tunnelId: string; apiKey: string }> {
+): Promise<CredentialsData> {
   console.log("");
   console.log("==================================================================");
   console.log("  🚀 欢迎使用 ChatGPT Agent Bridge 首次配置向导 (Setup Wizard)");
@@ -370,69 +314,30 @@ async function runSetupWizard(
 
   rl.close();
 
-  const localExample = path.resolve(process.cwd(), ".env.example");
-  let targetEnvPath: string;
-  if (fs.existsSync(localExample)) {
-    targetEnvPath = path.resolve(process.cwd(), ".env");
-    let content = fs.existsSync(targetEnvPath)
-      ? fs.readFileSync(targetEnvPath, "utf8")
-      : fs.readFileSync(localExample, "utf8");
-    if (/CONTROL_PLANE_TUNNEL_ID=.*/.test(content)) {
-      content = content.replace(/CONTROL_PLANE_TUNNEL_ID=.*/, `CONTROL_PLANE_TUNNEL_ID=${tunnelId}`);
-    } else {
-      content += `\nCONTROL_PLANE_TUNNEL_ID=${tunnelId}`;
-    }
-    if (/CONTROL_PLANE_API_KEY=.*/.test(content)) {
-      content = content.replace(/CONTROL_PLANE_API_KEY=.*/, `CONTROL_PLANE_API_KEY=${apiKey}`);
-    } else {
-      content += `\nCONTROL_PLANE_API_KEY=${apiKey}`;
-    }
-    fs.writeFileSync(targetEnvPath, content, { mode: 0o600 });
-  } else {
-    const userConfigDir = path.join(os.homedir(), ".config", "chatgpt-agent-bridge");
-    if (!fs.existsSync(userConfigDir)) {
-      fs.mkdirSync(userConfigDir, { recursive: true });
-    }
-    targetEnvPath = path.join(userConfigDir, ".env");
-    const content = `# ChatGPT Agent Bridge OpenAI Credentials\nCONTROL_PLANE_TUNNEL_ID=${tunnelId}\nCONTROL_PLANE_API_KEY=${apiKey}\n`;
-    fs.writeFileSync(targetEnvPath, content, { mode: 0o600 });
-  }
-
-  process.env.CONTROL_PLANE_TUNNEL_ID = tunnelId;
-  process.env.CONTROL_PLANE_API_KEY = apiKey;
+  const { targetEnvPath } = saveCredentials({ tunnelId, apiKey });
 
   console.log(`\n✓ 成功保存 OpenAI 凭证至: ${targetEnvPath}`);
   console.log(`✓ 成功保存工作区配置至: ${configManager.configPath}`);
   console.log("------------------------------------------------------------------\n");
 
-  return { tunnelId, apiKey };
+  return loadCredentials();
 }
 
-function initTunnelProfile(tunnelId: string, force = false): void {
-  const profileDir = path.join(os.homedir(), ".config", "tunnel-client");
-  const profilePath = path.join(profileDir, `${PROFILE}.yaml`);
-  const serverJsPath = path.resolve(__dirname, "server.js");
-  const mcpCommand = `"${process.execPath}" "${serverJsPath}"`;
-
-  let needsInit = force || !fs.existsSync(profilePath);
-  if (!needsInit && fs.existsSync(profilePath)) {
+async function openDashboardWhenReady(port: number | string): Promise<void> {
+  if (process.env.NO_OPEN === "1" || process.env.CI) return;
+  const url = `http://127.0.0.1:${port}`;
+  const start = Date.now();
+  while (Date.now() - start < 4000) {
     try {
-      const content = fs.readFileSync(profilePath, "utf8");
-      if (!content.includes(serverJsPath)) {
-        needsInit = true;
+      const res = await fetch(`${url}/healthz`, { signal: AbortSignal.timeout(500) });
+      if (res.ok) {
+        break;
       }
-    } catch {
-      needsInit = true;
-    }
+    } catch {}
+    await new Promise((r) => setTimeout(r, 200));
   }
-
-  if (needsInit) {
-    console.log(`→ 正在配置 tunnel profile (${PROFILE})...`);
-    execSync(
-      `tunnel-client init --sample sample_mcp_stdio_local --profile "${PROFILE}" --tunnel-id "${tunnelId}" --mcp-command '${mcpCommand}' --force`,
-      { stdio: "inherit" }
-    );
-  }
+  console.log(`  🌐 正在为您在默认浏览器中打开控制台: ${url}\n`);
+  openBrowser(url);
 }
 
 function printHelp(): void {
@@ -456,6 +361,7 @@ ChatGPT Agent Bridge v${version}
   -p, --port <port>      自定义 Web 控制台与桥接端口 (默认: 8791)
   -w, --workspace <dir>  添加/激活指定的工作区目录 (默认: 当前目录)
   -c, --config <file>    指定 bridge-config.json 配置文件路径
+  --no-open              启动后不自动在默认浏览器中打开控制台
   -v, --version          查看当前版本
   -h, --help             查看帮助信息
 
@@ -566,6 +472,7 @@ async function main(): Promise<void> {
   initTunnelProfile(tunnelId, firstArg === "init");
 
   const restartRequested = args.includes("-r") || args.includes("--restart");
+  const noOpen = args.includes("--no-open");
   const runningPids = getTunnelPids();
 
   if (runningPids.length > 0) {
@@ -577,6 +484,10 @@ async function main(): Promise<void> {
       console.log(`  • Web 控制台: http://127.0.0.1:${port}`);
       console.log(`  • 重新启动:   npx chatgpt-agent-bridge --restart`);
       console.log(`  • 健康检查:   tunnel-client health --url http://127.0.0.1:8080`);
+      if (!noOpen) {
+        console.log(`  🌐 正在为您在默认浏览器中打开控制台: http://127.0.0.1:${port}`);
+        openBrowser(`http://127.0.0.1:${port}`);
+      }
       process.exit(0);
     }
   }
@@ -609,6 +520,10 @@ async function main(): Promise<void> {
       BRIDGE_PORT: String(port),
     },
   });
+
+  if (!noOpen) {
+    void openDashboardWhenReady(port);
+  }
 
   const onSignal = (sig: NodeJS.Signals) => {
     if (child.pid) {

@@ -24,6 +24,7 @@ import { spawn } from "node:child_process";
 import { ConfigManager } from "./config.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import { getVersion, pickDirectoryDialog } from "./system.js";
+import { loadCredentials, saveCredentials } from "./credentials.js";
 import { getGitDiff } from "./git.js";
 import {
   type TaskMode,
@@ -523,12 +524,19 @@ export class ModelBridge {
       if (req.method === "GET" && url === "/api/status") {
         const tunnelHealthy = await this.checkTunnelHealth();
         const currentVersion = getVersion();
+        const creds = loadCredentials();
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({
           bridge: { port: this.port, started: this.started, version: currentVersion },
           config: {
             ...this.configManager.get(),
             configPath: this.configManager.configPath,
+          },
+          credentials: {
+            tunnelId: creds.tunnelId,
+            apiKeyMasked: creds.apiKeyMasked,
+            source: creds.source,
+            targetEnvPath: creds.targetEnvPath,
           },
           system: { version: currentVersion, nodeVersion: process.version, platform: process.platform },
           tunnel: { healthy: tunnelHealthy },
@@ -662,6 +670,48 @@ export class ModelBridge {
         }, 15_000);
 
         req.on("close", cleanup);
+        return;
+      }
+      if (req.method === "GET" && url === "/api/config/credentials") {
+        const creds = loadCredentials();
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({
+          tunnelId: creds.tunnelId,
+          apiKey: creds.apiKey,
+          apiKeyMasked: creds.apiKeyMasked,
+          source: creds.source,
+          targetEnvPath: creds.targetEnvPath,
+        }));
+        return;
+      }
+      if (req.method === "POST" && url === "/api/config/credentials") {
+        const raw = await readBody(req);
+        try {
+          const body = JSON.parse(raw.toString("utf8"));
+          const { targetEnvPath } = saveCredentials({
+            tunnelId: body.tunnelId,
+            apiKey: body.apiKey,
+          });
+          const shouldRestart = Boolean(body.restart);
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            success: true,
+            targetEnvPath,
+            restarting: shouldRestart,
+            message: shouldRestart
+              ? "凭证已成功保存，隧道服务正在重启..."
+              : `凭证已成功保存至 ${targetEnvPath}`,
+          }));
+
+          if (shouldRestart) {
+            setTimeout(() => {
+              void this.restartTunnel();
+            }, 300);
+          }
+        } catch (err) {
+          res.writeHead(400, { "content-type": "application/json" });
+          res.end(JSON.stringify({ error: (err as Error).message }));
+        }
         return;
       }
       if (req.method === "POST" && url === "/api/config/security") {
