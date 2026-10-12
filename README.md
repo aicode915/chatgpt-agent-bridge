@@ -108,9 +108,9 @@ In conversational AI workflows, ChatGPT may finish answering the user's objectiv
 ### Step 2: One-Click Service Launch
 
 #### 🌟 Recommended Option: Run via `npx` (Zero-Config & No Clone Needed)
-Run directly in any project folder without cloning the repository:
+Run directly in any project folder without cloning the repository (using `@latest` ensures you always run the latest version without being affected by local npx cache):
 ```bash
-npx chatgpt-agent-bridge
+npx chatgpt-agent-bridge@latest
 ```
 > **✨ Zero-Config Automation & Interactive Wizard**:
 > - **Dependency Auto-Detection & One-Click Install**: No need to manually install `tunnel-client` or `codex` upfront. The wizard checks for missing tools on first launch and offers to auto-install them via Homebrew with one press of Enter;
@@ -118,10 +118,10 @@ npx chatgpt-agent-bridge
 > - **Auto Profile Setup**: Automatically detects tools and sets up the `tunnel-client` Profile;
 > - **Useful CLI Commands**:
 >   ```bash
->   npx chatgpt-agent-bridge status       # Check status, credentials, and workspaces
->   npx chatgpt-agent-bridge --restart    # Smoothly restart the tunnel daemon
->   npx chatgpt-agent-bridge --port 8791  # Specify custom dashboard and bridge port
->   npx chatgpt-agent-bridge server       # Run directly in MCP Stdio protocol mode
+>   npx chatgpt-agent-bridge@latest status       # Check status, credentials, and workspaces
+>   npx chatgpt-agent-bridge@latest --restart    # Smoothly restart the tunnel daemon
+>   npx chatgpt-agent-bridge@latest --port 8791  # Specify custom dashboard and bridge port
+>   npx chatgpt-agent-bridge@latest server       # Run directly in MCP Stdio protocol mode
 >   ```
 
 #### Source Development Option (Git Clone)
@@ -238,7 +238,7 @@ For comprehensive product roadmap and UX optimization proposals, please refer to
 
 Key roadmap directions:
 - [x] **Zero-Friction Prompting**: Dedicated Custom GPT / Custom Instructions setup to eliminate prompt copy-pasting;
-- [x] **Streamlined CLI Packaging**: Distribute via npm (`npx chatgpt-agent-bridge`) with an interactive setup wizard;
+- [x] **Streamlined CLI Packaging**: Distribute via npm (`npx chatgpt-agent-bridge@latest`) with an interactive setup wizard;
 - [x] **Web Dashboard Diff Viewer**: Real-time visual Git Diff rendering after coding tasks finish;
 - [x] **Real-time MCP Progress Notifications**: Stream sub-command status back to ChatGPT UI via `notifications/progress`;
 - [ ] **Controlled Network Allowlist**: Allow outbound traffic to trusted domains (e.g. `github.com`) while preserving sandbox boundaries;

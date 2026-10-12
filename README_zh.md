@@ -108,9 +108,9 @@ ChatGPT 对话
 ### 步骤 2：一键启动服务
 
 #### 🌟 推荐方式：免 Clone 直接使用 `npx` 启动（零配置极简体验）
-无需克隆代码仓库，在终端直接执行：
+无需克隆代码仓库，在终端直接执行（推荐带上 `@latest`，确保每次自动运行最新发布版，避免受 npx 本地旧版本缓存影响）：
 ```bash
-npx chatgpt-agent-bridge
+npx chatgpt-agent-bridge@latest
 ```
 > **✨ 全自动零配置 & 交互式向导**：
 > - **依赖自检与一键安装**：无需手动预先安装 `tunnel-client` 或 `codex`，首次运行时向导会自动检测缺失依赖，并提示是否通过 Homebrew 自动一键安装；
@@ -118,10 +118,10 @@ npx chatgpt-agent-bridge
 > - **自动初始化**：自动检测环境并配置 `tunnel-client` Profile，瞬间拉起服务并就绪；
 > - **CLI 常用命令**：
 >   ```bash
->   npx chatgpt-agent-bridge status       # 查看凭证、工作区与隧道运行状态
->   npx chatgpt-agent-bridge --restart    # 平滑重启隧道（中断并重新拉起）
->   npx chatgpt-agent-bridge --port 8791  # 指定自定义 Web 控制台与桥接端口
->   npx chatgpt-agent-bridge server       # 以标准 MCP Stdio 协议运行服务端
+>   npx chatgpt-agent-bridge@latest status       # 查看凭证、工作区与隧道运行状态
+>   npx chatgpt-agent-bridge@latest --restart    # 平滑重启隧道（中断并重新拉起）
+>   npx chatgpt-agent-bridge@latest --port 8791  # 指定自定义 Web 控制台与桥接端口
+>   npx chatgpt-agent-bridge@latest server       # 以标准 MCP Stdio 协议运行服务端
 >   ```
 
 #### 源码开发方式（Git Clone）
@@ -237,11 +237,11 @@ Codex CLI 在 macOS 上通过 Apple Seatbelt 沙箱进行进程级别隔离。�
 为了未来开源发布和更广泛的社区使用，本项目制定了详尽的产品体验优化与底层技术路线图，详细规划请参阅独立文档：👉 [**OPTIMIZATIONS.md**](./OPTIMIZATIONS.md)。
 
 主要演进方向包括：
-- [ ] **免复制提示词体验**：配置 ChatGPT 专属 Custom GPT / 全局自定义指令，实现零摩擦对话即用；
-- [ ] **CLI 极简分发**：发布至 npm 支持 `npx` 启动，并增加交互式配置向导 (Setup Wizard)；
-- [ ] **Web 控制台 Git Diff 可视化**：任务执行完毕后直接在网页上高亮展示代码变更；
+- [x] **免复制提示词体验**：配置 ChatGPT 专属 Custom GPT / 全局自定义指令，实现零摩擦对话即用；
+- [x] **CLI 极简分发**：发布至 npm 支持 `npx chatgpt-agent-bridge@latest` 启动，并增加交互式配置向导 (Setup Wizard)；
+- [x] **Web 控制台 Git Diff 可视化**：任务执行完毕后直接在网页上高亮展示代码变更；
+- [x] **实时进度上报**：利用 MCP `notifications/progress` 将实时子命令状态回传给 ChatGPT 界面；
 - [ ] **受控网络白名单**：在保持沙箱隔离的前提下仅放行代码仓库域名，无需切换至全量 `danger-full-access`；
-- [ ] **实时进度上报**：利用 MCP `notifications/progress` 将实时子命令状态回传给 ChatGPT 界面；
 - [ ] **多轮执行自愈与并发隔离**：提升脚本容错诊断能力，支持多任务工作区资源隔离。
 
 ---
