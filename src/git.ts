@@ -107,3 +107,110 @@ export async function getGitDiff(cwd: string): Promise<GitDiffResult> {
     untracked,
   };
 }
+
+export interface WorkspaceInspectResult {
+  path: string;
+  isGitRepo: boolean;
+  gitBranch?: string;
+  gitStatusSummary?: string;
+  totalEntries: number;
+  tree: string;
+}
+
+const DEFAULT_IGNORED_DIRS = new Set([
+  ".git",
+  "node_modules",
+  ".DS_Store",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  ".turbo",
+  ".cache",
+  ".idea",
+  ".vscode",
+  "coverage",
+]);
+
+/**
+ * Rapidly inspect workspace directory structure and git status without launching codex
+ */
+export async function inspectWorkspace(
+  targetDir: string,
+  maxDepth = 2,
+  maxEntries = 150,
+): Promise<WorkspaceInspectResult> {
+  if (!fs.existsSync(targetDir)) {
+    throw new Error(`Directory not found: ${targetDir}`);
+  }
+
+  // 1. Git metadata
+  let isGitRepo = false;
+  let gitBranch: string | undefined;
+  let gitStatusSummary: string | undefined;
+
+  const revParse = await runGit(["rev-parse", "--is-inside-work-tree"], targetDir);
+  if (revParse.code === 0 && revParse.stdout.trim() === "true") {
+    isGitRepo = true;
+    const branchOut = await runGit(["branch", "--show-current"], targetDir);
+    gitBranch = branchOut.stdout.trim() || "HEAD (detached)";
+
+    const statusOut = await runGit(["status", "--short"], targetDir);
+    const lines = statusOut.stdout.split("\n").filter((l) => l.trim().length > 0);
+    gitStatusSummary = lines.length === 0 ? "clean" : `${lines.length} modified/untracked file(s)`;
+  }
+
+  // 2. Build directory tree recursively
+  const lines: string[] = [];
+  let count = 0;
+
+  function walk(currentDir: string, currentDepth: number, prefix: string) {
+    if (currentDepth > maxDepth || count >= maxEntries) return;
+
+    let entries: fs.Dirent[] = [];
+    try {
+      entries = fs.readdirSync(currentDir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    const sorted = entries
+      .filter((e) => !DEFAULT_IGNORED_DIRS.has(e.name) && e.name !== ".DS_Store")
+      .sort((a, b) => {
+        if (a.isDirectory() && !b.isDirectory()) return -1;
+        if (!a.isDirectory() && b.isDirectory()) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+    for (let i = 0; i < sorted.length; i++) {
+      if (count >= maxEntries) {
+        lines.push(`${prefix}… [truncated: entry limit reached]`);
+        break;
+      }
+      const entry = sorted[i];
+      const isLast = i === sorted.length - 1;
+      const marker = isLast ? "└── " : "├── ";
+      const nextPrefix = prefix + (isLast ? "    " : "│   ");
+
+      count++;
+      if (entry.isDirectory()) {
+        lines.push(`${prefix}${marker}${entry.name}/`);
+        walk(path.join(currentDir, entry.name), currentDepth + 1, nextPrefix);
+      } else {
+        lines.push(`${prefix}${marker}${entry.name}`);
+      }
+    }
+  }
+
+  lines.push(path.resolve(targetDir));
+  walk(targetDir, 1, "");
+
+  return {
+    path: path.resolve(targetDir),
+    isGitRepo,
+    gitBranch,
+    gitStatusSummary,
+    totalEntries: count,
+    tree: lines.join("\n"),
+  };
+}

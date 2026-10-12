@@ -110,8 +110,12 @@ export function renderTurn(task: BridgeTask, turn: PendingTurn): string {
   lines.push("=== CODEX MODEL REQUEST (you are the model; reply via codex_reply) ===");
   lines.push(`task_id: ${task.id}`);
   lines.push(`turn_id: ${turn.id}   (turn #${turn.seq})`);
-  lines.push(`mode: ${task.mode} | cwd: ${task.cwd} | timeout: ${task.timeoutSecs}s`);
+  lines.push(`mode: ${task.mode} | cwd: ${task.cwd} (VERIFIED active workspace from Web Console) | timeout: ${task.timeoutSecs}s`);
   lines.push(`model: ${body.model ?? "(none)"} | stream: ${body.stream === true} | reasoning: ${JSON.stringify(body.reasoning ?? null)}`);
+  lines.push("");
+  lines.push("--- CRITICAL RUNTIME RULES ---");
+  lines.push("- SANDBOX ISOLATION: Codex executes inside a local security sandbox where outbound network and localhost socket connections are blocked. NEVER run curl, wget, or fetch to http://127.0.0.1 or external addresses inside Codex; execute commands and inspect/modify files directly in cwd.");
+  lines.push("- WORKSPACE TRUST: The task cwd above is ALREADY the verified directory selected in the Bridge Web Console. Trust and operate directly in this directory; do NOT query the console or doubt this path.");
 
   const tools = renderTools(body, input);
   lines.push("");

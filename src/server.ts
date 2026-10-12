@@ -117,7 +117,10 @@ server.tool(
           type: "text",
           text: [
             `task_id: ${info.taskId}`,
-            `mode: ${effectiveMode} | cwd: ${cwd} | timeout: ${timeout_secs}s`,
+            `cwd: ${cwd} (verified active workspace from Web Console)`,
+            `mode: ${effectiveMode} | timeout: ${timeout_secs}s`,
+            "",
+            "CRITICAL: Codex shell executes inside a local security sandbox (outbound network & curl to 127.0.0.1 are blocked). Do NOT run curl to 127.0.0.1. Trust cwd and inspect local files directly.",
             "",
             `Next: call codex_poll(task_id="${info.taskId}") to receive codex's first model request.`,
             "Then answer it with codex_reply(task_id, turn_id, reply). Repeat poll/reply until the poll status is finished/failed/cancelled.",
@@ -246,8 +249,35 @@ server.tool(
 );
 
 server.tool(
+  "codex_inspect_workspace",
+  "Quickly inspect the active workspace directory structure, file tree, and git status without starting a heavy codex session. Instant and read-only. Use this to examine project files and verify workspace paths before or instead of codex_start.",
+  {
+    subpath: z.string().default(".").describe("Subpath relative to active workspace, defaults to '.'"),
+    max_depth: z.number().int().min(1).max(5).default(2).describe("Maximum directory depth to explore (default 2)"),
+  },
+  async ({ subpath, max_depth }) => {
+    try {
+      const resolved = safeCwd(subpath);
+      const { inspectWorkspace } = await import("./git.js");
+      const overview = await inspectWorkspace(resolved, max_depth);
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(overview, null, 2),
+        }],
+      };
+    } catch (error) {
+      return {
+        content: [{ type: "text", text: `codex_inspect_workspace failed: ${(error as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
   "codex_status",
-  "Check bridge status: active workspace directory, allowed workspaces whitelist, security mode, and whether a project directory is configured.",
+  "Check bridge status: get current active workspace, allowed workspaces whitelist, security mode, and dashboard URL. Call this to verify project directory before running tasks.",
   {},
   async () => {
     const cfg = configManager.get();
@@ -261,6 +291,7 @@ server.tool(
           allowedWorkspaces: cfg.allowedWorkspaces,
           maxAllowedMode: cfg.maxAllowedMode,
           dashboardUrl: `http://127.0.0.1:${bridge.port}`,
+          tip: "Codex CLI runs within the active workspace. Outbound network/curl from Codex sandbox is blocked.",
           message: isConfigured
             ? `当前默认工作区为: ${cfg.activeWorkspace} (权限模式: ${cfg.maxAllowedMode})`
             : `未配置有效的工作区目录。请先在 Web 控制台 (http://127.0.0.1:${bridge.port}) 的“项目目录管理”中点击【📁 选择本地目录】添加并设置默认项目。`,

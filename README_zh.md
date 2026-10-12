@@ -50,6 +50,7 @@ ChatGPT 对话
 本服务对外暴露以下核心 MCP 工具，用于驱动 Codex 执行闭环及环境检测：
 
 - `codex_status`：查询当前工作区目录、允许白名单、安全锁策略及就绪状态。
+- `codex_inspect_workspace`：快速探测当前激活工作区的目录树与 Git 状态，免启动 Codex 秒级只读响应。
 - `codex_start`：启动一个 Codex CLI 任务，支持指定初始 Prompt、工作目录（`cwd`）、超时时间及权限模式（`mode`）。
 - `codex_poll`：轮询获取 Codex 发起的待作答模型请求（上下文 + 工具定义），或等待任务结束获取最终 stdout/stderr。
 - `codex_reply`：ChatGPT 作为模型提交回答（支持文本消息、执行 JS 编排、函数调用、思维链推理等）。

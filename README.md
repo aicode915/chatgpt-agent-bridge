@@ -50,6 +50,7 @@ ChatGPT conversation
 The MCP server exposes the following core tools driving the closed-loop Codex execution and environment inspection:
 
 - `codex_status`: Check bridge status: active workspace directory, allowed workspaces whitelist, security mode, and readiness.
+- `codex_inspect_workspace`: Rapidly inspect active workspace directory structure, file tree, and git status without launching Codex (instant, read-only).
 - `codex_start`: Start a Codex CLI session with initial prompt, working directory (`cwd`), timeout, and sandbox permission mode (`mode`).
 - `codex_poll`: Fetch pending model requests (context + tools) for ChatGPT to answer, or wait for the process to finish and return final results.
 - `codex_reply`: Submit ChatGPT's answer as the model (supporting text message, `exec` JS orchestration, function calls, reasoning summary).

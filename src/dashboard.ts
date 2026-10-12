@@ -1580,11 +1580,13 @@ export function renderDashboardHtml(version = getVersion()): string {
           ? '- For external network (e.g. git push, install remote packages): mode="danger-full-access"\\n   - For editing files / local tests: mode="workspace-write"'
           : '- For editing files / local tests / git commit: mode="workspace-write"\\n   - For read-only inspection: mode="read-only"';
         const cwdValEn = cfg.activeWorkspace ? cfg.activeWorkspace : '<Please set workspace directory in Web Console>';
-        promptText = \`You are the "model" driving the local Codex agent. You can call codex_status() at any time to inspect workspace status and security lock policies; if no workspace is configured, notify the user to select a project directory in the Web Console first.
+        promptText = \`You are the "model" driving the local Codex agent. You can call codex_status() at any time to inspect workspace status, or codex_inspect_workspace() to quickly view directory tree & git status without launching codex.
 Workflow:
-1) When a local coding task is requested, invoke codex_start(prompt, cwd="\${cwdValEn}", mode) (Current max allowed mode: \${cfg.maxAllowedMode}).
+1) For fast directory/file tree inspection, call codex_inspect_workspace(max_depth=2).
+2) For coding/testing tasks, invoke codex_start(prompt, cwd="\${cwdValEn}", mode) (Current max allowed mode: \${cfg.maxAllowedMode}).
    \${modeHintEn}
-2) Loop: Call codex_poll(task_id, wait_secs≈25):
+   [SANDBOX NOTE]: Codex shell runs inside a security sandbox where outbound network / localhost curl (127.0.0.1) are blocked. Trust cwd and inspect files directly.
+3) Loop: Call codex_poll(task_id, wait_secs≈25):
    - status=model_request: Follow the REPLY PROTOCOL in the returned message and reply via codex_reply(task_id, turn_id, reply);
      To execute an action, output JS with exec (e.g. await tools.exec_command({cmd:"ls"}));
      [CRITICAL CONCLUSION]: Do NOT simply stop in the chat after completing the goal! You MUST invoke codex_reply(task_id, turn_id, 'message("Task completion summary")') one final time so Codex exits cleanly (status=finished);
@@ -1596,11 +1598,13 @@ Keep tasks concise (~2 tool calls per step); any file modification requires mode
           ? '- 需连外网（如 git push、安装远程包）：mode="danger-full-access"\\n   - 修改文件/本地测试：mode="workspace-write"'
           : '- 修改文件/本地测试/本地 commit：mode="workspace-write"\\n   - 只读查看：mode="read-only"';
         const cwdVal = cfg.activeWorkspace ? cfg.activeWorkspace : '<请在控制台添加并设置工作目录>';
-        promptText = \`你是驱动本机 Codex 的“模型”。随时可用 codex_status() 查询工作区状态与安全锁策略；若未配置工作区目录，请先告知用户前往 Web 控制台选定项目目录。
+        promptText = \`你是驱动本机 Codex 的“模型”。随时可用 codex_status() 查询工作区状态与安全锁策略；若仅需快速查看目录树/文件结构，可直接调用 codex_inspect_workspace() 免启动 Codex 秒级获取。
 流程：
-1) 需要执行本机编码任务时调用 codex_start(prompt, cwd="\${cwdVal}", mode)（当前安全锁最高模式: \${cfg.maxAllowedMode}）。
+1) 快速查看目录树/Git状态：直接调用 codex_inspect_workspace(max_depth=2)。
+2) 需要执行本机编码任务时调用 codex_start(prompt, cwd="\${cwdVal}", mode)（当前安全锁最高模式: \${cfg.maxAllowedMode}）。
    \${modeHint}
-2) 循环：调用 codex_poll(task_id, wait_secs≈25)：
+   【沙箱注意】：Codex 处于安全沙箱中，禁止发起外部网络及 localhost (127.0.0.1) 的 curl 请求。请直接操作工作区文件。
+3) 循环：调用 codex_poll(task_id, wait_secs≈25)：
    - status=model_request：按返回文本里的 REPLY PROTOCOL，用 codex_reply(task_id, turn_id, reply) 作答；
      要执行动作就发 exec 的 JS（如 await tools.exec_command({cmd:"ls"})）；
      【关键收尾】：目标达成后切勿直接在聊天中停止！必须最后调用一次 codex_reply(task_id, turn_id, 'message("任务完成总结")')，使 Codex 正常结束（status=finished）；
