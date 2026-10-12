@@ -92,9 +92,9 @@ In conversational AI workflows, ChatGPT may finish answering the user's objectiv
 ## Quickstart Guide
 
 ### Step 1: Obtain OpenAI Platform Credentials & Add Custom MCP Server
-1. **Create Tunnel**: Navigate to [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels), create a new tunnel, and copy your Tunnel ID (e.g., `tunnel_xxxx`).
-2. **Generate Runtime API Key**: Navigate to [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys), create or copy a runtime API key (e.g., `sk-...`).
-3. **Add Custom MCP Server**: Open [ChatGPT Plugins & Tools (chatgpt.com/plugins)](https://chatgpt.com/plugins), click **"Add"** in the top right &rarr; select **"Add custom MCP server"** &rarr; choose **Tunnel** connection method &rarr; select the tunnel created above.
+1. **Create Tunnel**: Navigate to <a href="https://platform.openai.com/settings/organization/tunnels" target="_blank" rel="noopener noreferrer">OpenAI Platform Tunnels</a>, create a new tunnel, and copy your Tunnel ID (e.g., `tunnel_xxxx`).
+2. **Generate Runtime API Key**: Navigate to <a href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noopener noreferrer">OpenAI Platform API Keys</a>, create or copy a runtime API key (e.g., `sk-...`).
+3. **Add Custom MCP Server**: Open <a href="https://chatgpt.com/plugins" target="_blank" rel="noopener noreferrer">ChatGPT Plugins & Tools (chatgpt.com/plugins)</a>, click **"Add"** in the top right &rarr; select **"Add custom MCP server"** &rarr; choose **Tunnel** connection method &rarr; select the tunnel created above.
 
 ### Step 2: One-Click Service Launch
 
