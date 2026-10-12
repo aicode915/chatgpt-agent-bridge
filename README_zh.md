@@ -92,9 +92,12 @@ ChatGPT 对话
 ## 快速上手与使用指南 (Quickstart Guide)
 
 ### 步骤 1：获取 OpenAI 平台凭证并添加自定义 MCP 服务器
-1. **创建隧道 (Tunnel)**：访问 <a href="https://platform.openai.com/settings/organization/tunnels" target="_blank" rel="noopener noreferrer">OpenAI Platform Tunnels</a>，点击创建一条新隧道，复制生成的隧道 ID（例如 `tunnel_xxxx`）。
-2. **生成运行时 API Key**：访问 <a href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noopener noreferrer">OpenAI Platform API Keys</a>，创建或复制一个运行时 API 密钥（例如 `sk-...`）。
-3. **添加自定义 MCP 服务器**：打开 <a href="https://chatgpt.com/plugins" target="_blank" rel="noopener noreferrer">ChatGPT 插件管理页面 (chatgpt.com/plugins)</a>，点击右上角 **“添加”** &rarr; 选择 **“添加自定义 MCP 服务器”**，弹窗参数填写说明：
+
+> 💡 **小贴士**：点击下方链接时建议使用 **`⌘ Command + 点击`** (Mac) 或 **`Ctrl + 点击`** (Windows) 在新标签页打开，避免离开当前 GitHub 页面。
+
+1. **创建隧道 (Tunnel)**：访问 [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels)，点击创建一条新隧道，复制生成的隧道 ID（例如 `tunnel_xxxx`）。
+2. **生成运行时 API Key**：访问 [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys)，创建或复制一个运行时 API 密钥（例如 `sk-...`）。
+3. **添加自定义 MCP 服务器**：打开 [ChatGPT 插件管理页面 (chatgpt.com/plugins)](https://chatgpt.com/plugins)，点击右上角 **“添加”** &rarr; 选择 **“添加自定义 MCP 服务器”**，弹窗参数填写说明：
    - **名称**：自定义名称（例如 `Codex Agent Bridge` 或 `本地代码助手`）；
    - **描述 (可选)**：用一句话说明其功能（例如 `连接本地 Codex 执行编程、代码审查与项目开发`）；
    - **连接方式**：切换至 **“隧道”**（Tunnel）标签页，在输入框中填入上方获取的隧道 ID（形如 `tunnel_xxxx`），或直接点选下方列出的隧道快捷标签；

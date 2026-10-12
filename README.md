@@ -92,9 +92,12 @@ In conversational AI workflows, ChatGPT may finish answering the user's objectiv
 ## Quickstart Guide
 
 ### Step 1: Obtain OpenAI Platform Credentials & Add Custom MCP Server
-1. **Create Tunnel**: Navigate to <a href="https://platform.openai.com/settings/organization/tunnels" target="_blank" rel="noopener noreferrer">OpenAI Platform Tunnels</a>, create a new tunnel, and copy your Tunnel ID (e.g., `tunnel_xxxx`).
-2. **Generate Runtime API Key**: Navigate to <a href="https://platform.openai.com/settings/organization/api-keys" target="_blank" rel="noopener noreferrer">OpenAI Platform API Keys</a>, create or copy a runtime API key (e.g., `sk-...`).
-3. **Add Custom MCP Server**: Open <a href="https://chatgpt.com/plugins" target="_blank" rel="noopener noreferrer">ChatGPT Plugins & Tools (chatgpt.com/plugins)</a>, click **"Add"** in the top right &rarr; select **"Add custom MCP server"**, and fill in the dialog fields:
+
+> 💡 **Tip**: Hold **`⌘ Command + Click`** (Mac) or **`Ctrl + Click`** (Windows) to open links in a new tab without leaving this page.
+
+1. **Create Tunnel**: Navigate to [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels), create a new tunnel, and copy your Tunnel ID (e.g., `tunnel_xxxx`).
+2. **Generate Runtime API Key**: Navigate to [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys), create or copy a runtime API key (e.g., `sk-...`).
+3. **Add Custom MCP Server**: Open [ChatGPT Plugins & Tools (chatgpt.com/plugins)](https://chatgpt.com/plugins), click **"Add"** in the top right &rarr; select **"Add custom MCP server"**, and fill in the dialog fields:
    - **Name**: Choose a custom name (e.g., `Codex Agent Bridge` or `Local Code Assistant`);
    - **Description (Optional)**: Brief summary (e.g., `Bridge to local Codex CLI for interactive programming & review`);
    - **Connection**: Switch tab to **"Tunnel"**, input your Tunnel ID (`tunnel_xxxx`), or click your tunnel tag from the list below;
