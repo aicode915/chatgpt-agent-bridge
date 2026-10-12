@@ -115,7 +115,7 @@ async function ensureDependencies(): Promise<void> {
   if (!checkCommand("git")) {
     missing.push({
       name: "git",
-      description: "Git 版本管理工具 (用于代码变更追踪与 diff 对比)",
+      description: "Git 版本管理工具 (用于代码版本管理、改动追踪及 git commit/push)",
       required: false,
       installCmd: "brew install git",
       manualHint: "brew install git 或执行 xcode-select --install",

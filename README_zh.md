@@ -38,10 +38,10 @@ ChatGPT 对话
 | **npm** | `>= 9.0.0` | Node 依赖包管理器 |
 | **Codex CLI** | `>= 0.161.0` | **必需**。首次运行向导将自动检测并支持一键安装（Homebrew），亦可手动安装：`brew install codex` |
 | **tunnel-client** | `>= 0.0.16` | **必需**。OpenAI 官方 Secure MCP Tunnel 客户端。首次运行向导将自动检测并支持一键安装，亦可手动安装：`brew tap openai/tools && brew install openai/tools/tunnel-client` |
-| **Git** | `>= 2.0` | **推荐**。用于工作区代码变更追踪与 Web 控制台 Git Diff 可视化比对 |
+| **Git** | `>= 2.0` | **推荐**。用于本地代码版本管理、改动差异追踪（`codex_diff`）、控制台 Diff 可视化及执行 `git commit`/`git push` |
 | **Homebrew** | - | **推荐 (macOS/Linux)**。用于首次向导自动一键安装缺失的 CLI 工具 |
 | **操作系统** | macOS / Linux | macOS 下 Codex CLI 默认启用 Apple Seatbelt 沙箱保护 |
-| **OpenAI 平台凭证** | - | 需要 ChatGPT 账号（支持 Connectors 自定义连接器）以及 OpenAI Platform 组织下的 Tunnel 访问凭证 (`CONTROL_PLANE_TUNNEL_ID` & `CONTROL_PLANE_API_KEY`) |
+| **OpenAI 平台凭证** | - | 需要 ChatGPT 账号（支持添加自定义 MCP 服务器 / 插件）以及 OpenAI Platform 组织下的 Tunnel 访问凭证 (`CONTROL_PLANE_TUNNEL_ID` & `CONTROL_PLANE_API_KEY`) |
 
 ---
 
@@ -91,10 +91,10 @@ ChatGPT 对话
 
 ## 快速上手与使用指南 (Quickstart Guide)
 
-### 步骤 1：获取 OpenAI 平台凭证与连接器配置
+### 步骤 1：获取 OpenAI 平台凭证并添加自定义 MCP 服务器
 1. **创建隧道 (Tunnel)**：访问 [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels)，点击创建一条新隧道，复制生成的隧道 ID（例如 `tunnel_xxxx`）。
 2. **生成运行时 API Key**：访问 [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys)，创建或复制一个运行时 API 密钥（例如 `sk-...`）。
-3. **绑定 ChatGPT 连接器**：打开 [ChatGPT 连接器设置](https://chatgpt.com/#settings/Connectors)，点击“新建自定义连接器” → 连接方式选择 **Tunnel** → 勾选刚刚创建的隧道。
+3. **添加自定义 MCP 服务器**：打开 [ChatGPT 插件管理页面 (chatgpt.com/plugins)](https://chatgpt.com/plugins)，点击右上角 **“添加”** &rarr; 选择 **“添加自定义 MCP 服务器”** &rarr; 连接方式选择 **Tunnel** &rarr; 勾选刚刚创建的隧道。
 
 ### 步骤 2：一键启动服务
 

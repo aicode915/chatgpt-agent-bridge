@@ -38,10 +38,10 @@ ChatGPT conversation
 | **npm** | `>= 9.0.0` | Node package manager |
 | **Codex CLI** | `>= 0.161.0` | **Required**. Interactive wizard auto-detects and installs via Homebrew on first launch, or install manually: `brew install codex` |
 | **tunnel-client** | `>= 0.0.16` | **Required**. OpenAI official Secure MCP Tunnel client. Interactive wizard auto-detects and installs on first launch, or install manually: `brew tap openai/tools && brew install openai/tools/tunnel-client` |
-| **Git** | `>= 2.0` | **Recommended**. For workspace change tracking and Web Dashboard Git Diff visualization |
+| **Git** | `>= 2.0` | **Recommended**. For workspace version control, diff inspection (`codex_diff`), Dashboard Git Diff visualization, and `git commit`/`git push` operations |
 | **Homebrew** | - | **Recommended (macOS/Linux)**. Used by the setup wizard to auto-install missing CLI dependencies |
 | **OS** | macOS / Linux | macOS runs Codex CLI with Apple Seatbelt sandbox isolation |
-| **OpenAI Credentials** | - | ChatGPT subscription (with Custom Connectors support) and OpenAI Platform Tunnel credentials (`CONTROL_PLANE_TUNNEL_ID` & `CONTROL_PLANE_API_KEY`) |
+| **OpenAI Credentials** | - | ChatGPT subscription (with Custom MCP Server / Plugins support) and OpenAI Platform Tunnel credentials (`CONTROL_PLANE_TUNNEL_ID` & `CONTROL_PLANE_API_KEY`) |
 
 ---
 
@@ -91,10 +91,10 @@ In conversational AI workflows, ChatGPT may finish answering the user's objectiv
 
 ## Quickstart Guide
 
-### Step 1: Obtain OpenAI Platform Credentials & Connector Setup
+### Step 1: Obtain OpenAI Platform Credentials & Add Custom MCP Server
 1. **Create Tunnel**: Navigate to [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels), create a new tunnel, and copy your Tunnel ID (e.g., `tunnel_xxxx`).
 2. **Generate Runtime API Key**: Navigate to [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys), create or copy a runtime API key (e.g., `sk-...`).
-3. **Bind ChatGPT Connector**: Open [ChatGPT Connector Settings](https://chatgpt.com/#settings/Connectors), click "Create Custom Connector" → choose **Tunnel** connection method → select the tunnel you just created.
+3. **Add Custom MCP Server**: Open [ChatGPT Plugins & Tools (chatgpt.com/plugins)](https://chatgpt.com/plugins), click **"Add"** in the top right &rarr; select **"Add custom MCP server"** &rarr; choose **Tunnel** connection method &rarr; select the tunnel created above.
 
 ### Step 2: One-Click Service Launch
 
