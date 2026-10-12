@@ -1114,7 +1114,7 @@ export function renderDashboardHtml(version = getVersion()): string {
 
     function renderDiffHtml(diffText) {
       const escape = str => str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      const lines = diffText.split('\n');
+      const lines = diffText.split(/\\r?\\n/);
       return lines.map(line => {
         const esc = escape(line);
         if (line.startsWith('+++') || line.startsWith('---')) {
