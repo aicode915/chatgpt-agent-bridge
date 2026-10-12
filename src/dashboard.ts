@@ -82,20 +82,36 @@ export function renderDashboardHtml(version = getVersion()): string {
     @keyframes pulse { 0% { opacity: 0.5; transform: scale(0.92); } 50% { opacity: 1; transform: scale(1.1); } 100% { opacity: 0.5; transform: scale(0.92); } }
     .dot-pulse { animation: pulse 1.8s infinite ease-in-out; }
     
+    /* Custom Sleek Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.18);
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(255, 255, 255, 0.32);
+    }
+
     .tabs {
       display: flex;
-      gap: 8px;
+      gap: 6px;
       margin-bottom: 24px;
       border-bottom: 1px solid var(--card-border);
-      padding-bottom: 8px;
-      overflow-x: auto;
+      padding-bottom: 10px;
+      flex-wrap: wrap;
     }
     .tab-btn {
       background: none;
       border: none;
       color: var(--text-muted);
-      padding: 8px 16px;
-      font-size: 14px;
+      padding: 6px 12px;
+      font-size: 13px;
       font-weight: 600;
       border-radius: 6px;
       cursor: pointer;
@@ -1167,12 +1183,13 @@ export function renderDashboardHtml(version = getVersion()): string {
       }
       tbody.innerHTML = list.map(item => {
         const isActive = item === active;
+        const enc = encodeURIComponent(item);
         return '<tr>' +
           '<td><code>' + item + '</code></td>' +
           '<td>' + (isActive ? '<span style="color: var(--success); font-weight: 600;">' + t('wsDefault') + '</span>' : '<span style="color: var(--text-muted);">' + t('wsAllowed') + '</span>') + '</td>' +
           '<td style="white-space: nowrap;">' +
-            (!isActive ? '<button class="btn btn-secondary btn-sm" style="margin-right: 6px;" onclick="setActiveWorkspace(\'' + encodeURIComponent(item) + '\')">' + t('wsSetDefault') + '</button>' : '') +
-            '<button class="btn btn-danger btn-sm" onclick="removeWorkspace(\'' + encodeURIComponent(item) + '\')">' + t('wsDelete') + '</button>' +
+            (!isActive ? '<button class="btn btn-secondary btn-sm" style="margin-right: 6px;" data-path="' + enc + '" onclick="setActiveWorkspace(this.dataset.path)">' + t('wsSetDefault') + '</button>' : '') +
+            '<button class="btn btn-danger btn-sm" data-path="' + enc + '" onclick="removeWorkspace(this.dataset.path)">' + t('wsDelete') + '</button>' +
           '</td>' +
         '</tr>';
       }).join('');
@@ -1285,8 +1302,8 @@ export function renderDashboardHtml(version = getVersion()): string {
           '<td title="' + tItem.cwd + '">' + cwdDisplay + '</td>' +
           '<td>' + new Date(tItem.created_at).toLocaleTimeString() + '</td>' +
           '<td>' +
-            '<button class="btn btn-secondary btn-sm" onclick="viewTaskDetail(\'' + tItem.task_id + '\')">' + t('btnViewDetail') + '</button> ' +
-            (tItem.status === 'running' ? '<button class="btn btn-danger btn-sm" onclick="cancelTask(\'' + tItem.task_id + '\')">' + t('btnTerminate') + '</button>' : '') +
+            '<button class="btn btn-secondary btn-sm" data-id="' + tItem.task_id + '" onclick="viewTaskDetail(this.dataset.id)">' + t('btnViewDetail') + '</button> ' +
+            (tItem.status === 'running' ? '<button class="btn btn-danger btn-sm" data-id="' + tItem.task_id + '" onclick="cancelTask(this.dataset.id)">' + t('btnTerminate') + '</button>' : '') +
           '</td>' +
         '</tr>';
       }).join('');
