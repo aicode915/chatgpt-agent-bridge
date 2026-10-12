@@ -36,8 +36,10 @@ ChatGPT 对话
 |---|---|---|
 | **Node.js** | `>= 18.0.0` (推荐 20+) | 服务端运行时，依赖 ES Modules 与 Top-level await |
 | **npm** | `>= 9.0.0` | Node 依赖包管理器 |
-| **Codex CLI** | `>= 0.161.0` | **必需**。Codex 0.161 起彻底移除了旧版 `wire_api = "chat"`，本项目完全基于 Responses API wire format 实现。安装：`brew install codex` 或访问 [OpenAI Codex](https://github.com/openai/codex) |
-| **tunnel-client** | `>= 0.0.16` | **必需**。OpenAI 官方 Secure MCP Tunnel 客户端。安装：`brew install tunnel-client` 或从 OpenAI 平台下载 |
+| **Codex CLI** | `>= 0.161.0` | **必需**。首次运行向导将自动检测并支持一键安装（Homebrew），亦可手动安装：`brew install codex` |
+| **tunnel-client** | `>= 0.0.16` | **必需**。OpenAI 官方 Secure MCP Tunnel 客户端。首次运行向导将自动检测并支持一键安装，亦可手动安装：`brew tap openai/tools && brew install openai/tools/tunnel-client` |
+| **Git** | `>= 2.0` | **推荐**。用于工作区代码变更追踪与 Web 控制台 Git Diff 可视化比对 |
+| **Homebrew** | - | **推荐 (macOS/Linux)**。用于首次向导自动一键安装缺失的 CLI 工具 |
 | **操作系统** | macOS / Linux | macOS 下 Codex CLI 默认启用 Apple Seatbelt 沙箱保护 |
 | **OpenAI 平台凭证** | - | 需要 ChatGPT 账号（支持 Connectors 自定义连接器）以及 OpenAI Platform 组织下的 Tunnel 访问凭证 (`CONTROL_PLANE_TUNNEL_ID` & `CONTROL_PLANE_API_KEY`) |
 
@@ -89,18 +91,12 @@ ChatGPT 对话
 
 ## 快速上手与使用指南 (Quickstart Guide)
 
-### 步骤 1：安装前置工具
-确保系统已安装 Node.js (>= 18) 与官方 CLI 工具：
-```bash
-brew install codex tunnel-client
-```
-
-### 步骤 2：获取 OpenAI 平台凭证与连接器配置
+### 步骤 1：获取 OpenAI 平台凭证与连接器配置
 1. **创建隧道 (Tunnel)**：访问 [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels)，点击创建一条新隧道，复制生成的隧道 ID（例如 `tunnel_xxxx`）。
 2. **生成运行时 API Key**：访问 [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys)，创建或复制一个运行时 API 密钥（例如 `sk-...`）。
 3. **绑定 ChatGPT 连接器**：打开 [ChatGPT 连接器设置](https://chatgpt.com/#settings/Connectors)，点击“新建自定义连接器” → 连接方式选择 **Tunnel** → 勾选刚刚创建的隧道。
 
-### 步骤 3：一键启动服务
+### 步骤 2：一键启动服务
 
 #### 🌟 推荐方式：免 Clone 直接使用 `npx` 启动（零配置极简体验）
 无需克隆代码仓库，在终端直接执行：
@@ -108,6 +104,7 @@ brew install codex tunnel-client
 npx chatgpt-agent-bridge
 ```
 > **✨ 全自动零配置 & 交互式向导**：
+> - **依赖自检与一键安装**：无需手动预先安装 `tunnel-client` 或 `codex`，首次运行时向导会自动检测缺失依赖，并提示是否通过 Homebrew 自动一键安装；
 > - **首发向导**：首次运行时终端将自动进入交互式向导，提示输入 `Tunnel ID` 与 `API Key`，配置将安全持久化至 `~/.config/chatgpt-agent-bridge/.env`（跨项目共享，无需反复填写）；
 > - **自动初始化**：自动检测环境并配置 `tunnel-client` Profile，瞬间拉起服务并就绪；
 > - **CLI 常用命令**：
@@ -125,11 +122,11 @@ git clone https://github.com/aicode915/chatgpt-agent-bridge.git
 cd chatgpt-agent-bridge
 ./scripts/start-tunnel.sh
 ```
-若未创建 `.env`，脚本同样会自动触发终端配置向导并引导生成环境配置。
+若未创建 `.env` 或缺少前置依赖，脚本同样会自动触发终端配置向导，引导一键安装依赖并生成环境配置。
 - 重启隧道：`./scripts/start-tunnel.sh --restart`
 - 本地无 ChatGPT 闭环测试：`npm run test:local`
 
-### 步骤 4：在 ChatGPT 中驱动 Codex
+### 步骤 3：在 ChatGPT 中驱动 Codex
 打开浏览器访问内置 Web 控制台：👉 **http://127.0.0.1:8791**。在“⚡ 提示词助手”中，我们提供了两种使用方式：
 
 #### 🌟 推荐方式（全员通用·彻底免去每次复制）：配置为 ChatGPT 自定义指令

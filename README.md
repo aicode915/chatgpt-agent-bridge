@@ -36,8 +36,10 @@ ChatGPT conversation
 |---|---|---|
 | **Node.js** | `>= 18.0.0` (Recommended 20+) | Runtime for the server, requires ES Modules and Top-level await |
 | **npm** | `>= 9.0.0` | Node package manager |
-| **Codex CLI** | `>= 0.161.0` | **Required**. Built entirely on Responses API wire format. Install via `brew install codex` or visit [OpenAI Codex](https://github.com/openai/codex) |
-| **tunnel-client** | `>= 0.0.16` | **Required**. OpenAI official Secure MCP Tunnel client. Install via `brew install tunnel-client` or OpenAI Platform |
+| **Codex CLI** | `>= 0.161.0` | **Required**. Interactive wizard auto-detects and installs via Homebrew on first launch, or install manually: `brew install codex` |
+| **tunnel-client** | `>= 0.0.16` | **Required**. OpenAI official Secure MCP Tunnel client. Interactive wizard auto-detects and installs on first launch, or install manually: `brew tap openai/tools && brew install openai/tools/tunnel-client` |
+| **Git** | `>= 2.0` | **Recommended**. For workspace change tracking and Web Dashboard Git Diff visualization |
+| **Homebrew** | - | **Recommended (macOS/Linux)**. Used by the setup wizard to auto-install missing CLI dependencies |
 | **OS** | macOS / Linux | macOS runs Codex CLI with Apple Seatbelt sandbox isolation |
 | **OpenAI Credentials** | - | ChatGPT subscription (with Custom Connectors support) and OpenAI Platform Tunnel credentials (`CONTROL_PLANE_TUNNEL_ID` & `CONTROL_PLANE_API_KEY`) |
 
@@ -89,18 +91,12 @@ In conversational AI workflows, ChatGPT may finish answering the user's objectiv
 
 ## Quickstart Guide
 
-### Step 1: Install Prerequisites
-Ensure Node.js (>= 18) and official CLI tools are installed:
-```bash
-brew install codex tunnel-client
-```
-
-### Step 2: Obtain OpenAI Platform Credentials & Connector Setup
+### Step 1: Obtain OpenAI Platform Credentials & Connector Setup
 1. **Create Tunnel**: Navigate to [OpenAI Platform Tunnels](https://platform.openai.com/settings/organization/tunnels), create a new tunnel, and copy your Tunnel ID (e.g., `tunnel_xxxx`).
 2. **Generate Runtime API Key**: Navigate to [OpenAI Platform API Keys](https://platform.openai.com/settings/organization/api-keys), create or copy a runtime API key (e.g., `sk-...`).
 3. **Bind ChatGPT Connector**: Open [ChatGPT Connector Settings](https://chatgpt.com/#settings/Connectors), click "Create Custom Connector" → choose **Tunnel** connection method → select the tunnel you just created.
 
-### Step 3: One-Click Service Launch
+### Step 2: One-Click Service Launch
 
 #### 🌟 Recommended Option: Run via `npx` (Zero-Config & No Clone Needed)
 Run directly in any project folder without cloning the repository:
@@ -108,6 +104,7 @@ Run directly in any project folder without cloning the repository:
 npx chatgpt-agent-bridge
 ```
 > **✨ Zero-Config Automation & Interactive Wizard**:
+> - **Dependency Auto-Detection & One-Click Install**: No need to manually install `tunnel-client` or `codex` upfront. The wizard checks for missing tools on first launch and offers to auto-install them via Homebrew with one press of Enter;
 > - **Setup Wizard**: On first run, an interactive terminal wizard guides you through entering your `Tunnel ID` and `API Key`, saving them securely to `~/.config/chatgpt-agent-bridge/.env` (shared across projects, never re-prompted);
 > - **Auto Profile Setup**: Automatically detects tools and sets up the `tunnel-client` Profile;
 > - **Useful CLI Commands**:
@@ -125,11 +122,11 @@ git clone https://github.com/aicode915/chatgpt-agent-bridge.git
 cd chatgpt-agent-bridge
 ./scripts/start-tunnel.sh
 ```
-If `.env` is not found, the script automatically triggers the interactive setup wizard.
+If `.env` or prerequisites are missing, the script automatically triggers the interactive setup wizard to install tools and configure the environment.
 - Restart tunnel: `./scripts/start-tunnel.sh --restart`
 - Local closed-loop loop test: `npm run test:local`
 
-### Step 4: Drive Codex from ChatGPT
+### Step 3: Drive Codex from ChatGPT
 Open the built-in Web Dashboard in your browser: 👉 **http://127.0.0.1:8791**. In the "⚡ Prompt Assistant" tab, two usage options are available:
 
 #### 🌟 Recommended Option (Universal & Free · Zero-Friction): Set as Custom Instructions

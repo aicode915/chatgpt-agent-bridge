@@ -29,6 +29,19 @@ function checkCommand(cmd: string): boolean {
     execSync(`command -v ${cmd}`, { stdio: "ignore" });
     return true;
   } catch {
+    const commonPaths = [
+      `/opt/homebrew/bin/${cmd}`,
+      `/usr/local/bin/${cmd}`,
+      path.join(os.homedir(), ".local", "bin", cmd),
+    ];
+    for (const p of commonPaths) {
+      if (fs.existsSync(p)) {
+        if (!process.env.PATH?.includes(path.dirname(p))) {
+          process.env.PATH = `${path.dirname(p)}:${process.env.PATH || ""}`;
+        }
+        return true;
+      }
+    }
     return false;
   }
 }
@@ -37,7 +50,134 @@ function getCommandPath(cmd: string): string | null {
   try {
     return execSync(`command -v ${cmd}`, { encoding: "utf8" }).trim();
   } catch {
+    const commonPaths = [
+      `/opt/homebrew/bin/${cmd}`,
+      `/usr/local/bin/${cmd}`,
+      path.join(os.homedir(), ".local", "bin", cmd),
+    ];
+    for (const p of commonPaths) {
+      if (fs.existsSync(p)) return p;
+    }
     return null;
+  }
+}
+
+function checkNodeVersion(): void {
+  const [major] = process.versions.node.split(".").map(Number);
+  if (major < 18) {
+    console.error(`✗ 当前 Node.js 版本为 v${process.versions.node}，chatgpt-agent-bridge 需要 Node.js >= 18.0.0。请先升级 Node.js。`);
+    process.exit(1);
+  }
+}
+
+function isVersionBelow(current: string, target: string): boolean {
+  const parse = (v: string) =>
+    v
+      .replace(/^v/, "")
+      .split(".")
+      .map((n) => parseInt(n, 10) || 0);
+  const [c1, c2, c3] = parse(current);
+  const [t1, t2, t3] = parse(target);
+  if (c1 !== t1) return c1 < t1;
+  if (c2 !== t2) return c2 < t2;
+  return c3 < t3;
+}
+
+async function ensureDependencies(): Promise<void> {
+  const missing: Array<{
+    name: string;
+    description: string;
+    required: boolean;
+    installCmd: string;
+    manualHint: string;
+  }> = [];
+
+  if (!checkCommand("tunnel-client")) {
+    missing.push({
+      name: "tunnel-client",
+      description: "OpenAI 官方 Secure MCP Tunnel 客户端",
+      required: true,
+      installCmd: "brew tap openai/tools && brew install openai/tools/tunnel-client",
+      manualHint: "brew tap openai/tools && brew install openai/tools/tunnel-client 或访问 https://platform.openai.com/settings/organization/tunnels",
+    });
+  }
+
+  if (!checkCommand("codex")) {
+    missing.push({
+      name: "codex",
+      description: "OpenAI Codex CLI (>= 0.161.0)",
+      required: true,
+      installCmd: "brew install codex",
+      manualHint: "brew install codex 或访问 https://github.com/openai/codex",
+    });
+  }
+
+  if (!checkCommand("git")) {
+    missing.push({
+      name: "git",
+      description: "Git 版本管理工具 (用于代码变更追踪与 diff 对比)",
+      required: false,
+      installCmd: "brew install git",
+      manualHint: "brew install git 或执行 xcode-select --install",
+    });
+  }
+
+  const hasBrew = checkCommand("brew");
+  const isInteractive = Boolean(process.stdin.isTTY);
+
+  if (!hasBrew && missing.some((d) => d.required && !checkCommand(d.name))) {
+    console.log("\nℹ️  提示：系统未检测到 Homebrew 包管理器。");
+    console.log('   在 macOS 上推荐先安装 Homebrew: /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"\n');
+  }
+
+  for (const dep of missing) {
+    if (checkCommand(dep.name)) continue;
+
+    console.log(`\n⚠️  未检测到${dep.required ? "必需" : "推荐"}依赖: ${dep.name} (${dep.description})`);
+
+    if (hasBrew && isInteractive) {
+      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      try {
+        const answer = (
+          await rl.question(
+            `👉 是否通过 Homebrew 自动安装 ${dep.name}？\n   [执行命令: ${dep.installCmd}] [Y/n]: `
+          )
+        ).trim().toLowerCase();
+        rl.close();
+
+        if (!answer || answer === "y" || answer === "yes") {
+          console.log(`\n⏳ 正在自动安装 ${dep.name}，请稍候...`);
+          try {
+            execSync(dep.installCmd, { stdio: "inherit" });
+            if (checkCommand(dep.name)) {
+              console.log(`✓ ${dep.name} 安装成功！\n`);
+              continue;
+            } else {
+              console.error(`✗ 安装命令执行完成，但在 PATH 中仍未找到 '${dep.name}'。`);
+            }
+          } catch (err: any) {
+            console.error(`✗ 自动安装 ${dep.name} 失败: ${err?.message || err}`);
+          }
+        } else {
+          console.log(`  已跳过自动安装 ${dep.name}。`);
+        }
+      } catch {
+        rl.close();
+      }
+    }
+
+    if (dep.required && !checkCommand(dep.name)) {
+      console.error(`\n✗ 缺少必需工具 '${dep.name}'。请先手动安装：`);
+      console.error(`  ${dep.manualHint}\n`);
+      process.exit(1);
+    }
+  }
+
+  // 校验已安装的 codex 版本是否满足最低要求
+  const codexVer = getCodexVersion();
+  if (codexVer && isVersionBelow(codexVer, "0.161.0")) {
+    console.warn(`\n⚠️  提示：检测到当前 codex 版本为 v${codexVer}，低于推荐版本 v0.161.0。`);
+    console.warn("   Codex 0.161 起彻底移除了旧版 wire_api，建议运行 'brew upgrade codex' 升级以防交互报错。\n");
   }
 }
 
@@ -351,6 +491,7 @@ async function showStatus(): Promise<void> {
   console.log(`• Node.js:         ${process.version} (${process.execPath})`);
   console.log(`• tunnel-client:   ${getCommandPath("tunnel-client") ?? "✗ 未安装 (Not Installed)"}`);
   console.log(`• codex:           ${getCommandPath("codex") ?? "⚠️ 未检测到 (Not Detected)"} (版本: ${getCodexVersion() ?? "未知"})`);
+  console.log(`• git:             ${getCommandPath("git") ?? "⚠️ 未检测到 (Not Detected)"}`);
   console.log("------------------------------------------------------------------");
   console.log(`• 配置文件路径:    ${configManager.configPath}`);
   console.log(`• 凭证来源:        ${creds.source ?? "未配置"}`);
@@ -370,6 +511,8 @@ async function showStatus(): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  checkNodeVersion();
+
   const args = process.argv.slice(2);
 
   if (args.includes("-h") || args.includes("--help")) {
@@ -406,16 +549,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (!checkCommand("tunnel-client")) {
-    console.error("✗ 未检测到 'tunnel-client' 命令。请先安装 OpenAI 官方 tunnel-client 工具：");
-    console.error("  参考：brew install tunnel-client 或访问 https://platform.openai.com/settings/organization/tunnels");
-    process.exit(1);
-  }
-
-  if (!checkCommand("codex")) {
-    console.warn("⚠️ 提示：系统 PATH 中未检测到 'codex' 命令。Codex CLI (>= 0.161.0) 为必需依赖：");
-    console.warn("  参考：brew install codex 或访问 https://github.com/openai/codex\n");
-  }
+  await ensureDependencies();
 
   const configManager = new ConfigManager();
   if (process.env.WORKSPACE_ROOT) {

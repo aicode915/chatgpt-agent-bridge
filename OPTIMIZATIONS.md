@@ -35,7 +35,7 @@
 - **优化方案与进展**：
   - [x] **交互式首次配置向导 (Interactive Setup Wizard) - ✅ 已完成**：
     - 在运行 `./scripts/start-tunnel.sh` 时，若检测到缺少 `.env` 或缺少凭证，终端自动进入交互式配置向导，提示输入 `OpenAI Tunnel ID` 和 `API Key` 并自动生成 `.env`；
-    - 自动检测本机是否安装了 `codex`、`tunnel-client` 及 `node`，若缺失则打印对应安装命令；
+    - 自动检测本机是否安装了 `codex`、`tunnel-client` 及 `node`，若缺失则提供交互式 Homebrew 一键安装确认，用户回车即可自动完成安装；
     - 自动完成环境校验、`npm install` 依赖安装、`npm run build` 自动编译及 Profile 初始化，一键拉起服务。
   - [x] **发布至 npm 社区 / 支持 `npx` 极简启动 - ✅ 已完成**：
     - 将项目打包并配置 npm bin 命令行入口，支持 `npx chatgpt-agent-bridge` 免 clone 直接运行；
