@@ -146,12 +146,15 @@ function loadCredentials(): { tunnelId?: string; apiKey?: string; source?: strin
   return { tunnelId, apiKey, source };
 }
 
-async function runSetupWizard(): Promise<{ tunnelId: string; apiKey: string }> {
+async function runSetupWizard(
+  configManager: ConfigManager,
+  existingCreds?: { tunnelId?: string; apiKey?: string }
+): Promise<{ tunnelId: string; apiKey: string }> {
   console.log("");
   console.log("==================================================================");
   console.log("  🚀 欢迎使用 ChatGPT Agent Bridge 首次配置向导 (Setup Wizard)");
   console.log("==================================================================");
-  console.log("检测到尚未配置 OpenAI 凭证，现在为您引导生成配置文件：\n");
+  console.log("现在为您引导配置 OpenAI 隧道凭证与本地项目工作区：\n");
   console.log("提示：若尚未创建隧道或密钥，请访问：");
   console.log("  • 隧道 ID：https://platform.openai.com/settings/organization/tunnels");
   console.log("  • 运行时密钥：https://platform.openai.com/settings/organization/api-keys");
@@ -160,26 +163,100 @@ async function runSetupWizard(): Promise<{ tunnelId: string; apiKey: string }> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   let tunnelId = "";
   while (!tunnelId) {
-    const input = await rl.question("👉 请输入 OpenAI Tunnel ID (如 tunnel_xxxx): ");
-    tunnelId = input.trim();
+    const hint = existingCreds?.tunnelId ? ` [当前: ${existingCreds.tunnelId}]` : " (如 tunnel_xxxx)";
+    const input = await rl.question(`👉 请输入 OpenAI Tunnel ID${hint}: `);
+    tunnelId = input.trim() || (existingCreds?.tunnelId ?? "");
     if (!tunnelId) console.log("  ⚠️ Tunnel ID 不能为空，请重新输入");
   }
 
   let apiKey = "";
   while (!apiKey) {
-    const input = await rl.question("👉 请输入 OpenAI 运行时 API Key (如 sk-...): ");
-    apiKey = input.trim();
+    const hint = existingCreds?.apiKey ? " [当前: 已配置 (回车保持)]" : " (如 sk-...)";
+    const input = await rl.question(`👉 请输入 OpenAI 运行时 API Key${hint}: `);
+    apiKey = input.trim() || (existingCreds?.apiKey ?? "");
     if (!apiKey) console.log("  ⚠️ API Key 不能为空，请重新输入");
   }
+
+  const port = process.env.BRIDGE_PORT ?? DEFAULT_PORT;
+  const defaultCwd = path.resolve(process.cwd());
+
+  console.log("\n------------------------------------------------------------------");
+  console.log("📁 项目工作区配置 (Workspace Configuration)");
+  console.log("------------------------------------------------------------------\n");
+
+  let chosenWorkspace: string | null = null;
+  while (chosenWorkspace === null) {
+    const input = (
+      await rl.question(
+        `👉 当前工作目录为 [${defaultCwd}]，是否将其设为默认项目目录？[Y/n/输入自定义路径]: `
+      )
+    ).trim();
+
+    if (!input || input.toLowerCase() === "y" || input.toLowerCase() === "yes") {
+      chosenWorkspace = defaultCwd;
+      configManager.setActiveWorkspace(chosenWorkspace);
+      console.log(`  ✓ 已将当前目录设为默认项目目录: ${chosenWorkspace}`);
+    } else if (input.toLowerCase() === "n" || input.toLowerCase() === "no") {
+      chosenWorkspace = "";
+      configManager.clearWorkspaces();
+      console.log(
+        `  💡 提示: 您尚未指定开发项目目录，Codex 将无法进行文件读写。可随时在 Web 控制台 (http://127.0.0.1:${port}) 一键点选本地目录。`
+      );
+    } else {
+      let customPath = input;
+      if (customPath.startsWith("~")) {
+        customPath = path.join(os.homedir(), customPath.slice(1));
+      }
+      const resolved = path.resolve(customPath);
+      if (fs.existsSync(resolved)) {
+        if (fs.statSync(resolved).isDirectory()) {
+          chosenWorkspace = resolved;
+          configManager.setActiveWorkspace(chosenWorkspace);
+          console.log(`  ✓ 已将指定目录设为默认项目目录: ${chosenWorkspace}`);
+        } else {
+          console.log(`  ⚠️ 指定路径不是一个目录: ${resolved}，请重新输入。`);
+        }
+      } else {
+        const createInput = (
+          await rl.question(`  ⚠️ 目录不存在: ${resolved}，是否自动创建？[Y/n]: `)
+        )
+          .trim()
+          .toLowerCase();
+        if (!createInput || createInput === "y" || createInput === "yes") {
+          try {
+            fs.mkdirSync(resolved, { recursive: true });
+            chosenWorkspace = resolved;
+            configManager.setActiveWorkspace(chosenWorkspace);
+            console.log(`  ✓ 成功创建并设为默认项目目录: ${chosenWorkspace}`);
+          } catch (err) {
+            console.log(`  ⚠️ 创建目录失败: ${(err as Error).message}，请重新输入。`);
+          }
+        } else {
+          console.log("  请重新输入有效目录路径，或输入 'n' 跳过设置。");
+        }
+      }
+    }
+  }
+
   rl.close();
 
   const localExample = path.resolve(process.cwd(), ".env.example");
   let targetEnvPath: string;
   if (fs.existsSync(localExample)) {
     targetEnvPath = path.resolve(process.cwd(), ".env");
-    let content = fs.readFileSync(localExample, "utf8");
-    content = content.replace(/CONTROL_PLANE_TUNNEL_ID=.*/, `CONTROL_PLANE_TUNNEL_ID=${tunnelId}`);
-    content = content.replace(/CONTROL_PLANE_API_KEY=.*/, `CONTROL_PLANE_API_KEY=${apiKey}`);
+    let content = fs.existsSync(targetEnvPath)
+      ? fs.readFileSync(targetEnvPath, "utf8")
+      : fs.readFileSync(localExample, "utf8");
+    if (/CONTROL_PLANE_TUNNEL_ID=.*/.test(content)) {
+      content = content.replace(/CONTROL_PLANE_TUNNEL_ID=.*/, `CONTROL_PLANE_TUNNEL_ID=${tunnelId}`);
+    } else {
+      content += `\nCONTROL_PLANE_TUNNEL_ID=${tunnelId}`;
+    }
+    if (/CONTROL_PLANE_API_KEY=.*/.test(content)) {
+      content = content.replace(/CONTROL_PLANE_API_KEY=.*/, `CONTROL_PLANE_API_KEY=${apiKey}`);
+    } else {
+      content += `\nCONTROL_PLANE_API_KEY=${apiKey}`;
+    }
     fs.writeFileSync(targetEnvPath, content, { mode: 0o600 });
   } else {
     const userConfigDir = path.join(os.homedir(), ".config", "chatgpt-agent-bridge");
@@ -194,7 +271,8 @@ async function runSetupWizard(): Promise<{ tunnelId: string; apiKey: string }> {
   process.env.CONTROL_PLANE_TUNNEL_ID = tunnelId;
   process.env.CONTROL_PLANE_API_KEY = apiKey;
 
-  console.log(`\n✓ 成功创建并保存配置文件至: ${targetEnvPath}`);
+  console.log(`\n✓ 成功保存 OpenAI 凭证至: ${targetEnvPath}`);
+  console.log(`✓ 成功保存工作区配置至: ${configManager.configPath}`);
   console.log("------------------------------------------------------------------\n");
 
   return { tunnelId, apiKey };
@@ -279,7 +357,10 @@ async function showStatus(): Promise<void> {
   console.log(`• 隧道 ID:         ${creds.tunnelId ? creds.tunnelId : "✗ 未配置"}`);
   console.log(`• 运行时密钥:      ${creds.apiKey ? `${creds.apiKey.slice(0, 7)}...****` : "✗ 未配置"}`);
   console.log("------------------------------------------------------------------");
-  console.log(`• 当前工作区:      ${cfg.activeWorkspace || "(未指定，可通过控制台添加)"}`);
+  console.log(`• 当前工作区:      ${cfg.activeWorkspace || "(未配置 - 可在 Web 控制台一键选择)"}`);
+  if (!cfg.activeWorkspace) {
+    console.log(`  ⚠️ 提示: 您尚未指定开发项目目录，Codex 将无法进行文件读写。可随时在 Web 控制台 (http://127.0.0.1:${port}) 一键点选本地目录。`);
+  }
   console.log(`• 允许访问工作区:  ${cfg.allowedWorkspaces.length > 0 ? cfg.allowedWorkspaces.join(", ") : "(无)"}`);
   console.log(`• 执行权限模式:    ${cfg.maxAllowedMode}`);
   console.log("------------------------------------------------------------------");
@@ -336,10 +417,17 @@ async function main(): Promise<void> {
     console.warn("  参考：brew install codex 或访问 https://github.com/openai/codex\n");
   }
 
+  const configManager = new ConfigManager();
+  if (process.env.WORKSPACE_ROOT) {
+    try {
+      configManager.setActiveWorkspace(process.env.WORKSPACE_ROOT);
+    } catch {}
+  }
+
   let creds = loadCredentials();
   if (firstArg === "init" || !creds.tunnelId || !creds.apiKey) {
     if (process.stdin.isTTY) {
-      creds = await runSetupWizard();
+      creds = await runSetupWizard(configManager, creds);
     } else {
       console.error("✗ 未检测到有效 OpenAI 凭证 (CONTROL_PLANE_TUNNEL_ID / CONTROL_PLANE_API_KEY)。");
       console.error("  非交互式环境中请先通过环境变量或 .env 文件提供凭证。");
@@ -349,13 +437,6 @@ async function main(): Promise<void> {
 
   const tunnelId = creds.tunnelId!;
   const apiKey = creds.apiKey!;
-
-  const configManager = new ConfigManager();
-  if (process.env.WORKSPACE_ROOT) {
-    try {
-      configManager.setActiveWorkspace(process.env.WORKSPACE_ROOT);
-    } catch {}
-  }
   const cfg = configManager.get();
 
   initTunnelProfile(tunnelId, firstArg === "init");
@@ -384,8 +465,12 @@ async function main(): Promise<void> {
   console.log(`  • 隧道配置:   profile=${PROFILE}`);
   console.log(`  • 隧道 ID:     ${tunnelId}`);
   console.log(`  • Web 控制台: http://127.0.0.1:${port}`);
-  console.log(`  • 当前工作区: ${cfg.activeWorkspace || "(可在 Web 控制台随时添加)"}`);
+  console.log(`  • 当前工作区: ${cfg.activeWorkspace || "(未配置 - 可在 Web 控制台一键选择)"}`);
   console.log(`  • 权限模式:   ${cfg.maxAllowedMode}`);
+  if (!cfg.activeWorkspace) {
+    console.log("------------------------------------------------------------------");
+    console.log(`  ⚠️ 提示: 您尚未指定开发项目目录，Codex 将无法进行文件读写。可随时在 Web 控制台 (http://127.0.0.1:${port}) 一键点选本地目录。`);
+  }
   console.log("------------------------------------------------------------------");
   console.log("  💡 提示: 配置 ChatGPT 自定义指令后，在 ChatGPT 中直接对话即可驱动本机 Codex！");
   console.log("  按 Ctrl+C 可随时停止隧道服务。");

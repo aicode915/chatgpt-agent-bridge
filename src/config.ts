@@ -139,7 +139,18 @@ export class ConfigManager {
     this.save();
   }
 
+  clearWorkspaces(): void {
+    this.data.allowedWorkspaces = [];
+    this.data.activeWorkspace = "";
+    this.save();
+  }
+
   setActiveWorkspace(targetPath: string): string {
+    if (!targetPath) {
+      this.data.activeWorkspace = "";
+      this.save();
+      return "";
+    }
     const resolved = path.resolve(targetPath);
     if (!this.data.allowedWorkspaces.includes(resolved)) {
       this.addWorkspace(resolved);
