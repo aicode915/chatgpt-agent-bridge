@@ -14,11 +14,13 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -39,6 +41,7 @@ jobs:
           if [[ "$TARGET_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+ ]]; then
             echo "🚀 Updating package.json version to match tag: $TARGET_VERSION"
             npm version "$TARGET_VERSION" --no-git-tag-version --allow-same-version
+            echo "TARGET_VERSION=$TARGET_VERSION" >> $GITHUB_ENV
           else
             echo "⚠️ Tag '$RAW_TAG' is not a semver version. Keeping package.json default version."
           fi
@@ -53,3 +56,23 @@ jobs:
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Commit and push version bump to repository
+        if: env.TARGET_VERSION != ''
+        run: |
+          TARGET_BRANCH="${{ github.event.release.target_commitish || 'main' }}"
+          if [[ "$TARGET_BRANCH" =~ ^[0-9a-f]{40}$ ]] || [ -z "$TARGET_BRANCH" ]; then
+            TARGET_BRANCH="main"
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add package.json package-lock.json
+          if ! git diff --cached --quiet; then
+            echo "Committing version bump for $TARGET_VERSION to $TARGET_BRANCH..."
+            git commit -m "chore(release): bump version to $TARGET_VERSION [skip ci]"
+            git push origin HEAD:refs/heads/$TARGET_BRANCH
+          else
+            echo "No changes in package.json to commit."
+          fi
