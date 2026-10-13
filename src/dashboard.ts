@@ -1728,7 +1728,7 @@ Keep tasks concise (~2 tool calls per step); any file modification requires mode
             try {
               const hRes = await fetch('/api/tunnel/health');
               const hData = await hRes.json();
-              if (hData.healthy || attempts >= 8) {
+              if (hData.healthy) {
                 clearInterval(pollTimer);
                 if (statusBox) {
                   statusBox.style.background = 'rgba(16, 185, 129, 0.15)';
@@ -1738,10 +1738,26 @@ Keep tasks concise (~2 tool calls per step); any file modification requires mode
                 }
                 fetchStatus();
                 fetchCredentials();
+              } else if (attempts >= 8) {
+                clearInterval(pollTimer);
+                if (statusBox) {
+                  statusBox.style.background = 'rgba(239, 68, 68, 0.15)';
+                  statusBox.style.color = 'var(--danger)';
+                  statusBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                  statusBox.innerText = '⚠️ 凭证已保存，但隧道健康检查未通过，请检查日志或在终端执行 npx chatgpt-agent-bridge --restart 重新拉起。';
+                }
+                fetchStatus();
+                fetchCredentials();
               }
             } catch {
               if (attempts >= 8) {
                 clearInterval(pollTimer);
+                if (statusBox) {
+                  statusBox.style.background = 'rgba(239, 68, 68, 0.15)';
+                  statusBox.style.color = 'var(--danger)';
+                  statusBox.style.border = '1px solid rgba(239, 68, 68, 0.3)';
+                  statusBox.innerText = '⚠️ 凭证已保存，隧道服务离线或重启超时，请在终端执行 npx chatgpt-agent-bridge --restart 重新拉起。';
+                }
                 fetchStatus();
                 fetchCredentials();
               }

@@ -21,11 +21,15 @@ import path from "node:path";
 import crypto from "node:crypto";
 import http from "node:http";
 import { spawn } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import { ConfigManager } from "./config.js";
 import { renderDashboardHtml } from "./dashboard.js";
 import { getVersion, pickDirectoryDialog } from "./system.js";
-import { loadCredentials, saveCredentials } from "./credentials.js";
+import { loadCredentials, saveCredentials, ensurePathWithHomebrew } from "./credentials.js";
 import { getGitDiff } from "./git.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 import {
   type TaskMode,
   type TaskStatus,
@@ -476,13 +480,20 @@ export class ModelBridge {
 
   restartTunnel(): Promise<string> {
     return new Promise((resolve) => {
-      const cliPath = path.resolve(__dirname, "cli.js");
+      ensurePathWithHomebrew();
+      const candidates = [
+        path.resolve(__dirname, "cli.js"),
+        path.resolve(__dirname, "../dist/cli.js"),
+        path.resolve(process.cwd(), "dist/cli.js"),
+      ];
+      const cliPath = candidates.find((p) => fs.existsSync(p));
       const scriptPath = path.resolve(process.cwd(), "scripts/start-tunnel.sh");
 
-      if (fs.existsSync(cliPath)) {
+      if (cliPath) {
         const child = spawn(process.execPath, [cliPath, "--restart"], {
           detached: true,
           stdio: "ignore",
+          env: { ...process.env },
         });
         child.unref();
         resolve("Tunnel restart triggered via CLI in background");
@@ -490,6 +501,7 @@ export class ModelBridge {
         const child = spawn("bash", [scriptPath, "--restart"], {
           detached: true,
           stdio: "ignore",
+          env: { ...process.env },
         });
         child.unref();
         resolve("Tunnel restart triggered in background");
