@@ -605,7 +605,10 @@ export function renderDashboardHtml(version = getVersion()): string {
       <div class="card">
         <div class="card-header">
           <div class="card-title" data-i18n="sysTunnelTitle">Secure MCP Tunnel 状态与管理</div>
-          <button class="btn btn-secondary btn-sm" onclick="restartTunnel()" data-i18n="btnRestartTunnel">一键重启隧道</button>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-sm" onclick="restartTunnel()" data-i18n="btnRestartTunnel">一键重启隧道</button>
+            <button class="btn btn-danger btn-sm" onclick="stopService()" data-i18n="btnStopService">停止服务</button>
+          </div>
         </div>
         <div style="display: flex; gap: 16px; margin-bottom: 16px; align-items: center;">
           <div><span data-i18n="sysTunnelHealthLabel">隧道健康状况:</span> <strong id="sys-tunnel-status">检查中...</strong></div>
@@ -796,6 +799,7 @@ export function renderDashboardHtml(version = getVersion()): string {
         logEmpty: "暂无符合条件的日志记录",
         sysTunnelTitle: "Secure MCP Tunnel 状态与管理",
         btnRestartTunnel: "一键重启隧道",
+        btnStopService: "停止服务",
         sysTunnelHealthLabel: "隧道健康状况:",
         btnCheckHealth: "检测连通性",
         sysTunnelTip: '隧道服务运行在本地 <code>http://127.0.0.1:8080</code>。若出现 <em>"Tunnel-client has not been seen for 300 seconds"</em>，请点击上方重启隧道或核对 <code>.env</code> 中的隧道 ID。',
@@ -907,6 +911,7 @@ export function renderDashboardHtml(version = getVersion()): string {
         logEmpty: "No logs matching current filter",
         sysTunnelTitle: "Secure MCP Tunnel Status & Management",
         btnRestartTunnel: "Restart Tunnel",
+        btnStopService: "Stop Service",
         sysTunnelHealthLabel: "Tunnel Health:",
         btnCheckHealth: "Check Connectivity",
         sysTunnelTip: 'Tunnel client runs locally on <code>http://127.0.0.1:8080</code>. If you see <em>"Tunnel-client has not been seen for 300 seconds"</em>, click Restart Tunnel or verify your Tunnel ID in <code>.env</code>.',
@@ -1646,6 +1651,29 @@ Keep tasks concise (~2 tool calls per step); any file modification requires mode
         setTimeout(fetchStatus, 3000);
       } catch (e) {
         alert('触发重启失败');
+      }
+    }
+
+    async function stopService() {
+      if (!confirm('确定停止服务吗？\n注意：停止后隧道及 Web 控制台将同步关闭，如需重新使用需在终端运行 npx chatgpt-agent-bridge 重新启动。')) return;
+      try {
+        const res = await fetch('/api/tunnel/stop', { method: 'POST' });
+        const data = await res.json();
+        showToast(data.message || '服务已停止');
+        document.body.innerHTML = '<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;background:#0f172a;color:#f8fafc;font-family:ui-sans-serif,system-ui,sans-serif;text-align:center;padding:24px;">'
+          + '<div style="font-size:54px;margin-bottom:16px;">🛑</div>'
+          + '<h2 style="margin:0 0 12px 0;font-size:24px;font-weight:700;">服务已停止 (Service Stopped)</h2>'
+          + '<p style="color:#94a3b8;max-width:540px;line-height:1.6;margin:0 0 24px 0;font-size:14px;">'
+          + 'ChatGPT Agent Bridge 与 Secure MCP Tunnel 服务已安全停止，Web 控制台已离线。<br>'
+          + '若需再次使用，请在终端执行下方命令重新拉起服务：'
+          + '</p>'
+          + '<div style="background:#1e293b;padding:12px 24px;border-radius:8px;border:1px solid #334155;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:15px;color:#38bdf8;font-weight:600;user-select:all;">'
+          + 'npx chatgpt-agent-bridge'
+          + '</div>'
+          + '<p style="color:#64748b;font-size:12px;margin-top:20px;">窗口可安全关闭</p>'
+          + '</div>';
+      } catch (e) {
+        alert('停止服务请求失败');
       }
     }
 

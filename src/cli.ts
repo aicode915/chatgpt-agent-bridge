@@ -460,6 +460,7 @@ ChatGPT Agent Bridge v${version}
   (默认)                 交互式向导配置并启动隧道桥接
   server                 以 MCP Stdio 协议直接运行服务端（供 tunnel-client 或宿主调用）
   status                 查看当前配置、凭证与隧道运行状态
+  stop                   停止正在运行的后台隧道服务
   init                   重新运行首次交互式配置向导并更新 Profile
 
 常用选项 (Options):
@@ -474,6 +475,7 @@ ChatGPT Agent Bridge v${version}
 
 示例 (Examples):
   npx chatgpt-agent-bridge               # 一键极简启动
+  npx chatgpt-agent-bridge stop          # 停止隧道服务
   npx chatgpt-agent-bridge --restart     # 重启隧道
   npx chatgpt-agent-bridge status        # 查看当前状态
   npx chatgpt-agent-bridge server        # Stdio MCP 模式
@@ -549,6 +551,17 @@ async function main(): Promise<void> {
 
   if (firstArg === "status" || args.includes("--status")) {
     await showStatus();
+    process.exit(0);
+  }
+
+  if (firstArg === "stop" || args.includes("--stop")) {
+    const pids = getTunnelPids();
+    if (pids.length === 0) {
+      console.log(`ℹ️  未检测到正在运行的隧道进程 (profile: ${PROFILE})。`);
+    } else {
+      await stopTunnel();
+      console.log(`✓ 隧道服务已成功停止 (PID: ${pids.join(", ")})。`);
+    }
     process.exit(0);
   }
 

@@ -121,6 +121,7 @@ npx chatgpt-agent-bridge@latest
 > - **Useful CLI Commands**:
 >   ```bash
 >   npx chatgpt-agent-bridge@latest status       # Check status, credentials, and workspaces
+>   npx chatgpt-agent-bridge@latest stop         # Gracefully stop background tunnel service
 >   npx chatgpt-agent-bridge@latest --restart    # Smoothly restart the tunnel daemon
 >   npx chatgpt-agent-bridge@latest --port 8791  # Specify custom dashboard and bridge port
 >   npx chatgpt-agent-bridge@latest server       # Run directly in MCP Stdio protocol mode
@@ -134,6 +135,7 @@ cd chatgpt-agent-bridge
 ./scripts/start-tunnel.sh
 ```
 If `.env` or prerequisites are missing, the script automatically triggers the interactive setup wizard to install tools and configure the environment.
+- Stop service: `./scripts/start-tunnel.sh stop`
 - Restart tunnel: `./scripts/start-tunnel.sh --restart`
 - Local closed-loop loop test: `npm run test:local`
 

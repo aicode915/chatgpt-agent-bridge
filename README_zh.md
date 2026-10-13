@@ -121,6 +121,7 @@ npx chatgpt-agent-bridge@latest
 > - **CLI 常用命令**：
 >   ```bash
 >   npx chatgpt-agent-bridge@latest status       # 查看凭证、工作区与隧道运行状态
+>   npx chatgpt-agent-bridge@latest stop         # 一键优雅停止后台隧道与桥接服务
 >   npx chatgpt-agent-bridge@latest --restart    # 平滑重启隧道（中断并重新拉起）
 >   npx chatgpt-agent-bridge@latest --port 8791  # 指定自定义 Web 控制台与桥接端口
 >   npx chatgpt-agent-bridge@latest server       # 以标准 MCP Stdio 协议运行服务端
@@ -134,6 +135,7 @@ cd chatgpt-agent-bridge
 ./scripts/start-tunnel.sh
 ```
 若未创建 `.env` 或缺少前置依赖，脚本同样会自动触发终端配置向导，引导一键安装依赖并生成环境配置。
+- 停止服务：`./scripts/start-tunnel.sh stop`
 - 重启隧道：`./scripts/start-tunnel.sh --restart`
 - 本地无 ChatGPT 闭环测试：`npm run test:local`
 

@@ -20,7 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import http from "node:http";
-import { spawn } from "node:child_process";
+import { spawn, execSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { ConfigManager } from "./config.js";
 import { renderDashboardHtml } from "./dashboard.js";
@@ -511,6 +511,42 @@ export class ModelBridge {
     });
   }
 
+  stopTunnel(): Promise<string> {
+    return new Promise((resolve) => {
+      ensurePathWithHomebrew();
+      const candidates = [
+        path.resolve(__dirname, "cli.js"),
+        path.resolve(__dirname, "../dist/cli.js"),
+        path.resolve(process.cwd(), "dist/cli.js"),
+      ];
+      const cliPath = candidates.find((p) => fs.existsSync(p));
+      const scriptPath = path.resolve(process.cwd(), "scripts/start-tunnel.sh");
+
+      if (cliPath) {
+        const child = spawn(process.execPath, [cliPath, "stop"], {
+          detached: true,
+          stdio: "ignore",
+          env: { ...process.env },
+        });
+        child.unref();
+        resolve("Tunnel stop triggered via CLI in background");
+      } else if (fs.existsSync(scriptPath)) {
+        const child = spawn("bash", [scriptPath, "stop"], {
+          detached: true,
+          stdio: "ignore",
+          env: { ...process.env },
+        });
+        child.unref();
+        resolve("Tunnel stop triggered in background");
+      } else {
+        try {
+          execSync('pkill -f "tunnel-client run --profile chatgpt-agent-bridge"', { stdio: "ignore" });
+        } catch {}
+        resolve("Tunnel stop triggered via pkill");
+      }
+    });
+  }
+
   private resetTurnIdleTimer(task: BridgeTask, turn: PendingTurn, customMs?: number): void {
     if (task.idleTimer) {
       clearTimeout(task.idleTimer);
@@ -913,6 +949,15 @@ export class ModelBridge {
         const result = await this.restartTunnel();
         res.writeHead(200, { "content-type": "application/json" });
         res.end(JSON.stringify({ message: result }));
+        return;
+      }
+      if (req.method === "POST" && url === "/api/tunnel/stop") {
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ success: true, message: "服务已停止，Web 控制台已离线" }));
+        setTimeout(async () => {
+          await this.stopTunnel();
+          process.exit(0);
+        }, 300);
         return;
       }
       const match = url.match(/^\/t\/([A-Za-z0-9_]+)\/v1\/responses\/?$/);
