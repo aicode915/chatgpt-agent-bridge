@@ -277,11 +277,20 @@ server.tool(
 
 server.tool(
   "codex_status",
-  "Check bridge status: get current active workspace, allowed workspaces whitelist, security mode, and dashboard URL. Call this to verify project directory before running tasks.",
+  "Check bridge status: get current active workspace, file tree, git status, security mode, and dashboard URL. Call this to instantly inspect project structure without starting codex.",
   {},
   async () => {
     const cfg = configManager.get();
     const isConfigured = Boolean(cfg.activeWorkspace);
+    let workspaceOverview: any = null;
+    if (isConfigured && cfg.activeWorkspace) {
+      try {
+        const { inspectWorkspace } = await import("./git.js");
+        workspaceOverview = await inspectWorkspace(cfg.activeWorkspace, 2);
+      } catch {
+        /* ignore */
+      }
+    }
     return {
       content: [{
         type: "text",
@@ -291,6 +300,9 @@ server.tool(
           allowedWorkspaces: cfg.allowedWorkspaces,
           maxAllowedMode: cfg.maxAllowedMode,
           dashboardUrl: `http://127.0.0.1:${bridge.port}`,
+          directoryTree: workspaceOverview?.tree || null,
+          gitBranch: workspaceOverview?.gitBranch || null,
+          gitStatusSummary: workspaceOverview?.gitStatusSummary || null,
           tip: "Codex CLI runs within the active workspace. Outbound network/curl from Codex sandbox is blocked.",
           message: isConfigured
             ? `当前默认工作区为: ${cfg.activeWorkspace} (权限模式: ${cfg.maxAllowedMode})`
