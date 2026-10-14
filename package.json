@@ -1,6 +1,6 @@
 {
   "name": "chatgpt-agent-bridge",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Bridge ChatGPT with local OpenAI Codex CLI via MCP and secure outbound tunnel - zero quota, full interactive agent.",
   "type": "module",
   "bin": {
